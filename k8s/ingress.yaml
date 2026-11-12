@@ -1,0 +1,45 @@
+# buva.shop with a Let's Encrypt certificate (cert-manager ClusterIssuer "letsencrypt-prod").
+# Remove the "tls" block and the cert-manager annotation if HTTPS is handled in front of the
+# cluster (e.g. by Nginx Proxy Manager on Oracle).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: buva
+  namespace: buva
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: 20m
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [buva.shop]
+      secretName: buva-shop-tls
+  rules:
+    - host: buva.shop
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port: { number: 80 }
+---
+# Old domain -> 301 to https://buva.shop (the web pods redirect requests for bhuva.duckdns.org)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: buva-old-domain
+  namespace: buva
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: bhuva.duckdns.org
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port: { number: 80 }

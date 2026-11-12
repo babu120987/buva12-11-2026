@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: buva-config
+  namespace: buva
+data:
+  PORT: "9000"
+  DB_HOST: db
+  DB_PORT: "5432"
+  DB_NAME: buva
+  DB_USER: buva
+  PUBLIC_SITE_URL: https://buva.shop
+  GOOGLE_CALLBACK_URL: https://buva.shop/api/auth/google/callback
+  FIREBASE_PROJECT_ID: buva-90d4b
+# Secrets (DB_PASSWORD, ADMIN_API_KEY, RAZORPAY_*, GOOGLE_CLIENT_*, GMAIL_*) live in the
+# "buva-secrets" Secret — create it from your .env, see k8s/README.md. Never commit it.
