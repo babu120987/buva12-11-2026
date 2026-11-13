@@ -31,6 +31,32 @@ requests, wishlist, saved addresses, profile, support tickets, newsletter, AI as
 Old links keep working: `product.html?slug=x` → `/?product=x`, `about.html` → `/#story`,
 `contact.html` → `/#contact`, and `bhuva.duckdns.org` → `https://buva.shop` (same path).
 
+## Shopping features (added 13 Nov 2026)
+
+| Shoppers see | Managed in |
+|---|---|
+| **Photo gallery** with hover zoom and full-screen viewer | Admin → Offers & catalogue → Photos & sizes |
+| **Size options** (30 / 50 / 100 ml) — each size is its own product with its own price and stock, linked by a *size group* | Main admin (create the size) + Photos & sizes (set the group) |
+| **Frequently bought together** (real co-purchases, then top picks) with "Add all to bag"; **You may also like**; **Recently viewed** | Automatic |
+| **Search suggestions** as you type; filters for price, rating, in stock, on deal | Automatic |
+| **Reviews**: star breakdown, verified-buyer badge, photos, "helpful" votes, sort and filter | Main admin → Reviews (approve); review photos under Offers & catalogue |
+| **Deals** with countdown — price drops at the start and is restored automatically at the end | Offers & catalogue → Deals |
+| **Combo offers** ("Buy any 2, save 10%"), applied automatically with an "add 1 more" nudge | Offers & catalogue → Combo offers |
+| **Coupons listed in the bag** with one-tap Apply | Main admin → Marketing (create) + Offers & catalogue → Coupons in bag |
+| **Back-in-stock and price-drop emails**, plus price-drop emails for wishlisted perfumes | Automatic (needs Gmail in `.env`) |
+| **Gift wrap** with a message at checkout | `GIFT_WRAP_FEE_PAISE` in `.env` |
+| **BUVA points**: earned when an order is delivered, redeemable at checkout, returned on cancellation | `POINTS_*` in `.env`; manual adjustments under Points & alerts |
+
+The bag preview and checkout use the same server-side pricing (`backend/commerce.js`), so the
+total shown is always the total charged. Gift wrap is invoiced under shipping & handling.
+
+**Upgrading an existing database** (your data is kept): migration 008 runs automatically only on
+a fresh volume. On a database that's already running, apply it once:
+```bash
+docker compose exec -T db psql -U buva -d buva < backend/migrations/008_commerce_features.sql
+docker compose up -d --build
+```
+
 ## Kubernetes
 
 See **[k8s/README.md](k8s/README.md)** — GitHub Actions builds private images to GHCR on every

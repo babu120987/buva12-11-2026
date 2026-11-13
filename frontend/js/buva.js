@@ -66,11 +66,28 @@ const stars = (r) => { const n = Math.round(r); return "★".repeat(n) + "☆".r
 
 /* ---------------- state ---------------- */
 const state = {
-  products: [], categories: [], filter: { family: "all", q: "", sort: "featured" },
-  cart: null, account: null, razorpay: { configured: false, keyId: null }, coupon: null,
+  products: [], categories: [],
+  filter: { family: "all", q: "", sort: "featured", price: "any", minRating: 0, inStock: false, onDeal: false },
+  cart: null, account: null, razorpay: { configured: false, keyId: null },
+  couponCode: null, quote: null, offers: { combos: [], deals: [], giftWrapFeePaise: 4900, points: {} },
+  checkout: { giftWrap: false, giftMessage: "", usePoints: false },
 };
 const wished = (id) => !!state.account?.wishlist?.some((w) => Number(w.productId) === Number(id));
 const famName = (slug) => state.categories.find((c) => c.slug === slug)?.name || label(slug);
+const RECENT_KEY = "buvaRecentlyViewed";
+const recent = {
+  list() { try { return JSON.parse(store.get(RECENT_KEY) || "[]").filter((x) => typeof x === "string").slice(0, 12); } catch { return []; } },
+  add(slug) { store.set(RECENT_KEY, JSON.stringify([slug, ...recent.list().filter((x) => x !== slug)].slice(0, 12))); },
+};
+
+/* live countdowns for deals: any element with data-ends="<ISO time>" */
+function timeLeft(iso) {
+  const ms = new Date(iso) - Date.now();
+  if (!(ms > 0)) return "Deal ended";
+  const d = Math.floor(ms / 86400000), h = Math.floor(ms / 3600000) % 24, m = Math.floor(ms / 60000) % 60, sec = Math.floor(ms / 1000) % 60;
+  return d ? `Ends in ${d}d ${h}h` : h ? `Ends in ${h}h ${m}m` : `Ends in ${m}m ${String(sec).padStart(2, "0")}s`;
+}
+setInterval(() => $$("[data-ends]").forEach((el) => { el.textContent = timeLeft(el.dataset.ends); }), 1000);
 
 /* ---------------- overlays ---------------- */
 function openModal(html, narrow = false) {
@@ -90,10 +107,17 @@ $("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") clos
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeAll(); $("#ask").classList.remove("open"); } });
 
 /* ---------------- catalogue ---------------- */
+const PRICE_BANDS = { any: [null, null], u1500: [null, 149999], b1500: [150000, 250000], a2500: [250001, null] };
 async function loadCatalogue() {
-  const qs = new URLSearchParams({ sort: state.filter.sort });
-  if (state.filter.family !== "all" && state.filter.family !== "wishlist") qs.set("family", state.filter.family);
-  if (state.filter.q) qs.set("q", state.filter.q);
+  const f = state.filter, qs = new URLSearchParams({ sort: f.sort });
+  if (f.family !== "all" && f.family !== "wishlist") qs.set("family", f.family);
+  if (f.q) qs.set("q", f.q);
+  const [min, max] = PRICE_BANDS[f.price] || PRICE_BANDS.any;
+  if (min !== null) qs.set("minPrice", min);
+  if (max !== null) qs.set("maxPrice", max);
+  if (f.minRating) qs.set("minRating", f.minRating);
+  if (f.inStock) qs.set("inStock", "true");
+  if (f.onDeal) qs.set("onDeal", "true");
   const { products } = await api("/products?" + qs);
   return products;
 }
@@ -109,33 +133,54 @@ async function renderGrid() {
   }
   if (state.filter.family === "wishlist") list = list.filter((p) => wished(p.id));
   $("#count").textContent = `${list.length} ${list.length === 1 ? "fragrance" : "fragrances"}`;
-  grid.innerHTML = list.length ? list.map(cardHtml).join("") : `<div class="empty">No fragrances match — try another family or search.</div>`;
+  const active = activeFilterCount();
+  $("#clearFilters").hidden = !active;
+  grid.innerHTML = list.length ? list.map(cardHtml).join("") : `<div class="empty">No fragrances match${active ? " these filters" : ""}. ${active ? `<button class="linkbtn" data-clear-filters>Clear filters</button>` : "Try another family or search."}</div>`;
 }
+const activeFilterCount = () => ["price", "minRating", "inStock", "onDeal"].filter((k) => k === "price" ? state.filter.price !== "any" : !!state.filter[k]).length;
 
 function cardHtml(p) {
   const out = p.availableQuantity <= 0;
-  const tag = out ? `<span class="tag soldout">Sold out</span>` : p.compareAtPricePaise ? `<span class="tag">Offer</span>` : p.featured ? `<span class="tag">Signature</span>` : "";
+  const deal = !out && p.dealEndsAt && new Date(p.dealEndsAt) > Date.now();
+  const off = p.compareAtPricePaise > p.pricePaise ? Math.round((1 - p.pricePaise / p.compareAtPricePaise) * 100) : 0;
+  const tag = out ? `<span class="tag soldout">Sold out</span>` : deal ? `<span class="tag deal">${off ? `${off}% off · ` : ""}Deal</span>` : off ? `<span class="tag">${off}% off</span>` : p.featured ? `<span class="tag">Signature</span>` : "";
   return `<article class="card">
     <div class="media" data-open="${esc(p.slug)}">${tag}${picture(p.imageUrl, p.imageAlt || p.name)}
-      ${out ? "" : `<button class="quick" data-add="${p.id}">Add to bag · ${inr(p.pricePaise)}</button>`}
+      ${out ? `<button class="quick notify" data-open="${esc(p.slug)}">Notify me</button>` : `<button class="quick" data-add="${p.id}">Add to bag · ${inr(p.pricePaise)}</button>`}
     </div>
     <button class="wish ${wished(p.id) ? "on" : ""}" data-wish="${p.id}" aria-label="Save ${esc(p.name)} to wishlist" aria-pressed="${wished(p.id)}">${heartSvg}</button>
     <div class="info">
-      <div class="fam-label">${esc(famName(p.scentFamily))} · ${esc(p.concentration)} · ${p.sizeMl} ml</div>
+      <div class="fam-label">${esc(famName(p.scentFamily))} · ${esc(p.concentration)} · ${p.sizeMl} ml${p.variantGroup ? " · more sizes" : ""}</div>
       <h4 data-open="${esc(p.slug)}">${esc(p.name)}</h4>
       <div class="notes">${esc(p.shortDescription || "")}</div>
-      <div class="row"><span class="price">${inr(p.pricePaise)}${p.compareAtPricePaise ? `<s>${inr(p.compareAtPricePaise)}</s>` : ""}</span>
+      <div class="row"><span class="price">${inr(p.pricePaise)}${p.compareAtPricePaise > p.pricePaise ? `<s>${inr(p.compareAtPricePaise)}</s>` : ""}</span>
         ${p.reviewCount ? `<span class="stars">${stars(p.averageRating)}<small>(${p.reviewCount})</small></span>` : ""}</div>
+      ${deal ? `<div class="deal-timer" data-ends="${esc(p.dealEndsAt)}">${timeLeft(p.dealEndsAt)}</div>` : ""}
       ${!out && p.availableQuantity <= 5 ? `<div class="low">Only ${p.availableQuantity} left</div>` : ""}
     </div></article>`;
 }
 
-$("#grid").addEventListener("click", (e) => {
-  const add = e.target.closest("[data-add]"), w = e.target.closest("[data-wish]"), o = e.target.closest("[data-open]");
+/* every product grid on the page shares one click handler */
+function onCardsClick(e) {
+  const add = e.target.closest("[data-add]"), w = e.target.closest("[data-wish]"), o = e.target.closest("[data-open]"), clr = e.target.closest("[data-clear-filters]");
+  if (clr) { clearFilters(); return; }
   if (add) { e.stopPropagation(); addToCart(add.dataset.add, 1, add); return; }
   if (w) { toggleWish(w.dataset.wish); return; }
   if (o) openProduct(o.dataset.open);
-});
+}
+["#grid", "#dealsGrid", "#recentGrid"].forEach((sel) => { const el = $(sel); if (el) el.addEventListener("click", onCardsClick); });
+
+/* filters */
+function syncFilterInputs() {
+  $("#fPrice").value = state.filter.price; $("#fRating").value = String(state.filter.minRating);
+  $("#fStock").checked = state.filter.inStock; $("#fDeal").checked = state.filter.onDeal;
+}
+function clearFilters() { Object.assign(state.filter, { price: "any", minRating: 0, inStock: false, onDeal: false }); syncFilterInputs(); renderGrid(); }
+$("#fPrice").addEventListener("change", (e) => { state.filter.price = e.target.value; renderGrid(); });
+$("#fRating").addEventListener("change", (e) => { state.filter.minRating = Number(e.target.value); renderGrid(); });
+$("#fStock").addEventListener("change", (e) => { state.filter.inStock = e.target.checked; renderGrid(); });
+$("#fDeal").addEventListener("change", (e) => { state.filter.onDeal = e.target.checked; renderGrid(); });
+$("#clearFilters").addEventListener("click", clearFilters);
 
 function renderChips() {
   const chips = [{ slug: "all", name: "All" }, ...state.categories];
@@ -162,62 +207,256 @@ function renderFamilies(allProducts) {
   }).join("");
 }
 
-/* search */
-let searchTimer;
-$("#searchBtn").addEventListener("click", () => { const bar = $("#searchbar"); bar.classList.toggle("open"); if (bar.classList.contains("open")) setTimeout(() => $("#searchInput").focus(), 200); });
+/* search with suggestions */
+let searchTimer, suggestTimer, suggestSeq = 0;
+const suggestBox = $("#suggest");
+$("#searchBtn").addEventListener("click", () => { const bar = $("#searchbar"); bar.classList.toggle("open"); if (bar.classList.contains("open")) setTimeout(() => $("#searchInput").focus(), 200); else hideSuggest(); });
+function hideSuggest() { suggestBox.hidden = true; suggestBox.innerHTML = ""; }
+function runSearch(q) {
+  state.filter.q = q;
+  if (q) { state.filter.family = "all"; renderChips(); document.getElementById("shop").scrollIntoView(); }
+  renderGrid();
+}
 $("#searchInput").addEventListener("input", (e) => {
-  clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => {
-    state.filter.q = e.target.value.trim();
-    if (state.filter.q) { state.filter.family = "all"; renderChips(); document.getElementById("shop").scrollIntoView(); }
-    renderGrid();
-  }, 300);
+  const q = e.target.value.trim();
+  clearTimeout(searchTimer); clearTimeout(suggestTimer);
+  searchTimer = setTimeout(() => runSearch(q), 450);
+  if (q.length < 2) { hideSuggest(); return; }
+  suggestTimer = setTimeout(async () => {
+    const seq = ++suggestSeq;
+    let r; try { r = await api("/search/suggest?q=" + encodeURIComponent(q)); } catch { return; }
+    if (seq !== suggestSeq) return;
+    if (!r.products.length && !r.families.length) { suggestBox.innerHTML = `<div class="sg-empty">No matches for “${esc(q)}”</div>`; suggestBox.hidden = false; return; }
+    suggestBox.innerHTML = r.products.map((p) => `<button class="sg-item" data-sg-product="${esc(p.slug)}"><span class="media">${picture(p.imageUrl, p.name)}</span><span><b>${esc(p.name)}</b><small>${p.sizeMl} ml · ${esc(p.shortDescription || "")}</small></span><em>${inr(p.pricePaise)}</em></button>`).join("")
+      + r.families.map((f) => `<button class="sg-item sg-fam" data-sg-family="${esc(f.slug)}">See all <b>${esc(f.name)}</b> fragrances →</button>`).join("");
+    suggestBox.hidden = false;
+  }, 160);
 });
+$("#searchInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { clearTimeout(searchTimer); hideSuggest(); runSearch(e.target.value.trim()); }
+  if (e.key === "Escape") hideSuggest();
+  if (e.key === "ArrowDown") { const first = suggestBox.querySelector("button"); if (first) { e.preventDefault(); first.focus(); } }
+});
+suggestBox.addEventListener("keydown", (e) => {
+  const items = $$("button", suggestBox), i = items.indexOf(document.activeElement);
+  if (e.key === "ArrowDown" && i < items.length - 1) { e.preventDefault(); items[i + 1].focus(); }
+  if (e.key === "ArrowUp") { e.preventDefault(); (i > 0 ? items[i - 1] : $("#searchInput")).focus(); }
+  if (e.key === "Escape") { hideSuggest(); $("#searchInput").focus(); }
+});
+suggestBox.addEventListener("click", (e) => {
+  const p = e.target.closest("[data-sg-product]"), f = e.target.closest("[data-sg-family]");
+  if (p) { hideSuggest(); openProduct(p.dataset.sgProduct); }
+  if (f) { hideSuggest(); $("#searchInput").value = ""; state.filter.q = ""; showFamily(f.dataset.sgFamily); }
+});
+document.addEventListener("click", (e) => { if (!e.target.closest("#searchbar")) hideSuggest(); });
 $("#menuBtn").addEventListener("click", () => $("#navlinks").classList.toggle("open"));
 $("#navlinks").addEventListener("click", () => $("#navlinks").classList.remove("open"));
 
 /* ---------------- product detail ---------------- */
+const miniCard = (p) => `<button class="mini" data-open-mini="${esc(p.slug)}"><span class="media">${picture(p.imageUrl, p.name)}</span><b>${esc(p.name)}</b><span class="price">${inr(p.pricePaise)}${p.compareAtPricePaise > p.pricePaise ? `<s>${inr(p.compareAtPricePaise)}</s>` : ""}</span>${p.reviewCount ? `<span class="stars">${stars(p.averageRating)}<small>(${p.reviewCount})</small></span>` : ""}</button>`;
+
+let productSeq = 0;
 async function openProduct(slug) {
-  let data;
-  try { data = await api("/products/" + encodeURIComponent(slug)); }
-  catch (err) { toast(err.status === 404 ? "That fragrance is no longer available" : err.message); return; }
-  const p = data.product, reviews = data.reviews || [];
+  const seq = ++productSeq;
+  let data, extras;
+  try {
+    [data, extras] = await Promise.all([
+      api("/products/" + encodeURIComponent(slug)),
+      api("/products/" + encodeURIComponent(slug) + "/extras").catch(() => ({ images: [], variants: [], boughtTogether: [], similar: [], reviewSummary: { total: 0, counts: {} }, deal: null })),
+    ]);
+  } catch (err) { toast(err.status === 404 ? "That fragrance is no longer available" : err.message); return; }
+  if (seq !== productSeq) return;
+  const p = data.product;
   const out = p.availableQuantity <= 0;
-  let q = 1;
+  const images = extras.images.length ? extras.images : [{ url: p.imageUrl, alt: p.imageAlt || p.name }];
+  const together = extras.boughtTogether.filter((x) => x.availableQuantity > 0).slice(0, 2);
+  const rv = { list: null, sort: "helpful", rating: 0, withPhotos: false };
+  const ui = { q: 1, img: 0, alert: null, fbt: new Set([String(p.id), ...together.map((x) => String(x.id))]) };
+  const seenCards = onePerPerfume(recent.list().map((sl) => state.products.find((x) => x.slug === sl)).filter((x) => x && x.slug !== slug && (!p.variantGroup || x.variantGroup !== p.variantGroup)));
+  recent.add(slug);
+  const off = p.compareAtPricePaise > p.pricePaise ? Math.round((1 - p.pricePaise / p.compareAtPricePaise) * 100) : 0;
+
+  const reviewsBlock = () => {
+    const sum = extras.reviewSummary;
+    if (!sum.total) return `<div class="reviews-list"><h4>Ratings &amp; reviews</h4><p class="sub">No reviews yet. Customers can review after their order is delivered.</p></div>`;
+    const bars = [5, 4, 3, 2, 1].map((n) => {
+      const c = sum.counts[n] || 0, pct = sum.total ? Math.round((c / sum.total) * 100) : 0;
+      return `<button class="bar ${rv.rating === n ? "on" : ""}" data-rv-rating="${n}"><span>${n}★</span><i><em style="width:${pct}%"></em></i><span>${c}</span></button>`;
+    }).join("");
+    const list = rv.list === null ? `<p class="sub">Loading reviews…</p>` : rv.list.length ? rv.list.map((r) => `
+      <div class="rev">
+        <div><span class="stars">${stars(r.rating)}</span> ${r.verifiedPurchase ? `<span class="verified">✓ Verified buyer</span>` : ""}</div>
+        ${r.reviewText ? `<p>${esc(r.reviewText)}</p>` : ""}
+        ${r.photos?.length ? `<div class="rev-photos">${r.photos.map((u) => `<button data-zoom="${esc(u)}"><img src="${esc(u)}" alt="Customer photo" loading="lazy"></button>`).join("")}</div>` : ""}
+        <div class="sub">${esc(r.reviewerName)} · ${fmtDate(r.createdAt)} · <button class="helpful ${r.votedHelpful ? "on" : ""}" data-helpful="${esc(r.id)}" ${r.votedHelpful ? "disabled" : ""}>👍 Helpful${r.helpfulCount ? ` (${r.helpfulCount})` : ""}</button></div>
+      </div>`).join("") : `<p class="sub">No reviews match.</p>`;
+    return `<div class="reviews-list">
+      <h4>Ratings &amp; reviews</h4>
+      <div class="rv-summary"><div class="rv-avg"><b>${sum.average}</b><span class="stars">${stars(sum.average)}</span><small>${sum.total} rating${sum.total === 1 ? "" : "s"}</small></div><div class="bars">${bars}</div></div>
+      <div class="rv-tools">
+        <select id="rvSort" aria-label="Sort reviews"><option value="helpful" ${rv.sort === "helpful" ? "selected" : ""}>Most helpful</option><option value="newest" ${rv.sort === "newest" ? "selected" : ""}>Newest</option><option value="highest" ${rv.sort === "highest" ? "selected" : ""}>Highest rated</option><option value="lowest" ${rv.sort === "lowest" ? "selected" : ""}>Lowest rated</option></select>
+        <label class="check" style="margin:0"><input type="checkbox" id="rvPhotos" ${rv.withPhotos ? "checked" : ""}> With photos</label>
+        ${rv.rating ? `<button class="linkbtn" data-rv-rating="0">Show all ratings</button>` : ""}
+      </div>${list}</div>`;
+  };
+  const loadReviews = async () => {
+    if (!extras.reviewSummary.total) return;
+    const qs = new URLSearchParams({ sort: rv.sort }); if (rv.rating) qs.set("rating", rv.rating); if (rv.withPhotos) qs.set("withPhotos", "1");
+    try { rv.list = (await api(`/products/${encodeURIComponent(slug)}/reviews?${qs}`, { auth: "optional" })).reviews; } catch { rv.list = []; }
+    const box = $("#rvBox"); if (box) { box.innerHTML = reviewsBlock(); wireReviews(); }
+  };
+  const wireReviews = () => {
+    const box = $("#rvBox"); if (!box) return;
+    $$("[data-zoom]", box).forEach((b) => b.onclick = () => openLightbox([b.dataset.zoom], 0));
+    $$("[data-rv-rating]", box).forEach((b) => b.onclick = () => { const n = Number(b.dataset.rvRating); rv.rating = rv.rating === n ? 0 : n; rv.list = null; box.innerHTML = reviewsBlock(); wireReviews(); loadReviews(); });
+    const so = $("#rvSort", box); if (so) so.onchange = () => { rv.sort = so.value; loadReviews(); };
+    const ph = $("#rvPhotos", box); if (ph) ph.onchange = () => { rv.withPhotos = ph.checked; loadReviews(); };
+    $$("[data-helpful]", box).forEach((b) => b.onclick = async () => {
+      b.disabled = true;
+      try { const r = await api(`/reviews/${b.dataset.helpful}/helpful`, { method: "POST", auth: "optional" }); const item = rv.list.find((x) => x.id === b.dataset.helpful); if (item) { item.helpfulCount = r.helpfulCount; item.votedHelpful = true; } b.classList.add("on"); b.textContent = `👍 Helpful (${r.helpfulCount})`; }
+      catch (ex) { b.disabled = false; toast(ex.message); }
+    });
+  };
+
+  const alertForm = (kind) => `<form class="alert-form" id="alertForm">
+      <label for="alEmail">${kind === "back_in_stock" ? "Email me when it's back in stock" : "Email me if the price drops below " + inr(p.pricePaise)}</label>
+      <div class="promo"><input id="alEmail" type="email" required placeholder="Your email" value="${esc(state.account?.customer?.email || "")}"><button type="submit">Notify me</button></div>
+      <div class="msg" id="alMsg" role="status"></div></form>`;
+
+  const fbtBlock = () => {
+    if (!together.length) return "";
+    const items = [p, ...together];
+    const chosen = items.filter((x) => ui.fbt.has(String(x.id)));
+    const total = chosen.reduce((s2, x) => s2 + x.pricePaise, 0);
+    return `<div class="fbt"><h4>Frequently bought together</h4>
+      <div class="fbt-row">${items.map((x, k) => `${k ? `<span class="plus">+</span>` : ""}<span class="fbt-img ${ui.fbt.has(String(x.id)) ? "" : "off"}">${picture(x.imageUrl, x.name)}</span>`).join("")}</div>
+      ${items.map((x, k) => `<label class="check fbt-item"><input type="checkbox" data-fbt="${x.id}" ${ui.fbt.has(String(x.id)) ? "checked" : ""}> <span>${k ? "" : "<b>This item:</b> "}${esc(x.name)}</span><span class="price">${inr(x.pricePaise)}</span></label>`).join("")}
+      <div class="row" style="margin-top:12px"><span>Total for ${chosen.length}: <b>${inr(total)}</b></span><button class="btn btn-sm btn-gold" id="fbtAdd" ${chosen.length ? "" : "disabled"}>Add ${chosen.length > 1 ? `all ${chosen.length}` : chosen.length ? "1" : ""} to bag</button></div>
+      ${state.offers.combos.length ? `<div class="sub" style="margin-top:6px">✦ ${esc(state.offers.combos[0].title)} — applied automatically in your bag</div>` : ""}</div>`;
+  };
+
   const draw = () => {
+    const cur = images[ui.img] || images[0];
     openModal(`<div class="pd">
-      <div class="media">${picture(p.imageUrl, p.imageAlt || p.name)}</div>
+      <div class="gallery">
+        <div class="gallery-main media" id="gMain" tabindex="0" aria-label="Product photo — click to enlarge">${off ? `<span class="tag ${extras.deal ? "deal" : ""}">${off}% off${extras.deal ? " · Deal" : ""}</span>` : ""}${picture(cur.url, cur.alt || p.name, "zoomable")}<span class="zoom-hint">Hover to zoom · click to enlarge</span></div>
+        ${images.length > 1 ? `<div class="thumbs">${images.map((im, k) => `<button class="${k === ui.img ? "on" : ""}" data-img="${k}" aria-label="Photo ${k + 1}">${picture(im.url, im.alt || p.name)}</button>`).join("")}</div>` : ""}
+      </div>
       <div class="body">
         <div class="fam-label">${esc(famName(p.scentFamily))}</div>
         <h2>${esc(p.name)}</h2>
-        ${p.reviewCount ? `<div class="stars">${stars(p.averageRating)}<small> ${p.averageRating} · ${p.reviewCount} review${p.reviewCount === 1 ? "" : "s"}</small></div>` : ""}
+        ${p.reviewCount ? `<button class="stars linkstars" id="toReviews">${stars(p.averageRating)}<small> ${p.averageRating} · ${p.reviewCount} review${p.reviewCount === 1 ? "" : "s"}</small></button>` : ""}
         <p class="desc">${esc(p.description || p.shortDescription || "")}</p>
         <div class="specs">
           <div><b>Notes</b>${esc(p.shortDescription || "—")}</div>
           <div><b>Strength</b>${esc(p.concentration)}</div>
           <div><b>Size</b>${p.sizeMl} ml</div>
         </div>
-        <div class="bigprice">${inr(p.pricePaise)}${p.compareAtPricePaise ? `<s>${inr(p.compareAtPricePaise)}</s>` : ""}</div>
+        ${extras.variants.length > 1 ? `<div class="lbl">Size</div><div class="sizes">${extras.variants.map((v) => `<button class="size ${v.slug === p.slug ? "active" : ""}" data-variant="${esc(v.slug)}" ${v.slug === p.slug ? 'aria-current="true"' : ""}><b>${v.sizeMl} ml</b><span>${inr(v.pricePaise)}</span>${v.availableQuantity <= 0 ? "<small>Sold out</small>" : ""}</button>`).join("")}</div>` : ""}
+        ${extras.deal ? `<div class="deal-box"><b>${esc(extras.deal.title)}</b><span data-ends="${esc(extras.deal.endsAt)}">${timeLeft(extras.deal.endsAt)}</span></div>` : ""}
+        <div class="bigprice">${inr(p.pricePaise)}${p.compareAtPricePaise > p.pricePaise ? `<s>${inr(p.compareAtPricePaise)}</s> <span class="save">Save ${inr(p.compareAtPricePaise - p.pricePaise)}</span>` : ""}</div>
         <div class="buyrow">
           ${out ? `<button class="btn btn-dark" disabled>Sold out</button>` : `
-          <div class="qty"><button data-q="-1" aria-label="Decrease">−</button><span>${q}</span><button data-q="1" aria-label="Increase">+</button></div>
-          <button class="btn btn-dark" id="pdAdd">Add to bag · ${inr(p.pricePaise * q)}</button>`}
+          <div class="qty"><button data-q="-1" aria-label="Decrease">−</button><span>${ui.q}</span><button data-q="1" aria-label="Increase">+</button></div>
+          <button class="btn btn-dark" id="pdAdd">Add to bag · ${inr(p.pricePaise * ui.q)}</button>`}
           <button class="wish ${wished(p.id) ? "on" : ""}" id="pdWish" aria-label="Wishlist">${heartSvg}</button>
         </div>
         ${!out && p.availableQuantity <= 5 ? `<div class="low">Only ${p.availableQuantity} left in stock</div>` : ""}
-        <div class="perks"><span>✦ Free delivery across India above ₹1,500</span><span>✦ Pay by UPI, card or cash on delivery</span><span>✦ GST invoice with every order</span></div>
-        ${reviews.length ? `<div class="reviews-list"><h4>Reviews</h4>${reviews.slice(0, 6).map((r) => `<div class="rev"><span class="stars">${stars(r.rating)}</span> ${esc(r.reviewText || "")}<div class="sub">${esc(r.reviewerName)} · ${fmtDate(r.createdAt)}</div></div>`).join("")}</div>` : ""}
-      </div></div>`);
-    $$("[data-q]", $("#mbox")).forEach((b) => b.onclick = () => { q = Math.max(1, Math.min(Math.min(20, p.availableQuantity), q + Number(b.dataset.q))); draw(); });
-    const add = $("#pdAdd"); if (add) add.onclick = async () => { if (await addToCart(p.id, q, add)) { closeAll(); openCart(); } };
+        ${out ? alertForm("back_in_stock") : ui.alert === "price_drop" ? alertForm("price_drop") : `<button class="linkbtn alert-link" id="priceAlert">🔔 Tell me if the price drops</button>`}
+        <div class="perks"><span>✦ Free delivery across India above ₹1,500</span><span>✦ Pay by UPI, card or cash on delivery</span><span>✦ Earn BUVA points on every order</span>${state.offers.giftWrapFeePaise >= 0 ? `<span>✦ Gift wrap with a message${state.offers.giftWrapFeePaise ? ` (${inr(state.offers.giftWrapFeePaise)})` : " — free"}</span>` : ""}</div>
+        ${fbtBlock()}
+      </div></div>
+      <div class="pd-below">
+        <div id="rvBox">${reviewsBlock()}</div>
+        ${extras.similar.length ? `<div class="rowsec"><h4>You may also like</h4><div class="minirow">${extras.similar.map(miniCard).join("")}</div></div>` : ""}
+        ${seenCards.length ? `<div class="rowsec"><h4>Recently viewed</h4><div class="minirow">${seenCards.map(miniCard).join("")}</div></div>` : ""}
+      </div>`);
+    const box = $("#mbox");
+    $$("[data-q]", box).forEach((b) => b.onclick = () => { ui.q = Math.max(1, Math.min(Math.min(20, p.availableQuantity), ui.q + Number(b.dataset.q))); draw(); });
+    $$("[data-img]", box).forEach((b) => b.onclick = () => { ui.img = Number(b.dataset.img); draw(); });
+    $$("[data-variant]", box).forEach((b) => b.onclick = () => { if (b.dataset.variant !== p.slug) openProduct(b.dataset.variant); });
+    $$("[data-open-mini]", box).forEach((b) => b.onclick = () => openProduct(b.dataset.openMini));
+    $$("[data-fbt]", box).forEach((c) => c.onchange = () => { c.checked ? ui.fbt.add(c.dataset.fbt) : ui.fbt.delete(c.dataset.fbt); draw(); });
+    const fa = $("#fbtAdd"); if (fa) fa.onclick = async () => {
+      fa.disabled = true; let ok = 0;
+      for (const id of ui.fbt) if (await addToCart(id, 1, null, true)) ok++;
+      if (ok) { toast(`${ok} item${ok > 1 ? "s" : ""} added to your bag`); closeAll(); openCart(); } else fa.disabled = false;
+    };
+    const add = $("#pdAdd"); if (add) add.onclick = async () => { if (await addToCart(p.id, ui.q, add)) { closeAll(); openCart(); } };
     $("#pdWish").onclick = async () => { await toggleWish(p.id); $("#pdWish").classList.toggle("on", wished(p.id)); };
+    const tr = $("#toReviews"); if (tr) tr.onclick = () => $("#rvBox").scrollIntoView({ behavior: "smooth" });
+    const pa = $("#priceAlert"); if (pa) pa.onclick = () => { ui.alert = "price_drop"; draw(); $("#alEmail")?.focus(); };
+    const af = $("#alertForm");
+    if (af) af.onsubmit = async (ev) => {
+      ev.preventDefault(); const email = $("#alEmail").value.trim(), m = $("#alMsg");
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { m.className = "msg err"; m.textContent = "Please enter a valid email."; return; }
+      try {
+        await api("/alerts", { method: "POST", auth: "optional", body: { productId: Number(p.id), kind: out ? "back_in_stock" : "price_drop", email } });
+        m.className = "msg ok"; m.textContent = out ? `We'll email ${email} as soon as it's back.` : `We'll email ${email} if the price drops.`;
+        af.querySelector("button").disabled = true;
+      } catch (ex) { m.className = "msg err"; m.textContent = ex.message; }
+    };
+    // hover zoom + click to enlarge
+    const main = $("#gMain");
+    if (main) {
+      const img = main.querySelector("img.zoomable");
+      main.onmousemove = (ev) => { if (!img || matchMedia("(hover: none)").matches) return; const r = main.getBoundingClientRect(); img.style.transformOrigin = `${((ev.clientX - r.left) / r.width) * 100}% ${((ev.clientY - r.top) / r.height) * 100}%`; main.classList.add("zooming"); };
+      main.onmouseleave = () => main.classList.remove("zooming");
+      main.onclick = () => openLightbox(images.map((x) => x.url), ui.img);
+      main.onkeydown = (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); main.click(); } };
+    }
+    wireReviews();
   };
   draw();
+  loadReviews();
   const url = new URL(location.href); url.searchParams.set("product", slug); history.replaceState(null, "", url);
   if (getToken()) api("/account/view-history", { method: "POST", body: { productId: p.id }, auth: true }).catch(() => {});
+  renderRecent();
 }
 // drop ?product= when the modal closes
 document.addEventListener("click", (e) => { if (e.target.closest("[data-close]") || e.target.id === "overlay" || e.target.id === "modal") { const u = new URL(location.href); if (u.searchParams.has("product")) { u.searchParams.delete("product"); history.replaceState(null, "", u); } } });
+
+/* full-screen photo viewer */
+const lb = { urls: [], i: 0 };
+function openLightbox(urls, i = 0) {
+  lb.urls = urls.filter(Boolean); lb.i = i; if (!lb.urls.length) return;
+  drawLightbox(); $("#lightbox").hidden = false; $("#lbClose").focus();
+}
+function drawLightbox() {
+  const u = lb.urls[lb.i];
+  const webp = /^\/img\/buva\/[a-z0-9-]+\.png$/.test(u) ? u.replace(/\.png$/, ".webp") : null;
+  $("#lbImg").innerHTML = webp ? `<picture><source srcset="${esc(webp)}" type="image/webp"><img src="${esc(u)}" alt="Product photo, enlarged"></picture>` : `<img src="${esc(u)}" alt="Product photo, enlarged">`;
+  $("#lbPrev").hidden = $("#lbNext").hidden = lb.urls.length < 2;
+  $("#lbCount").textContent = lb.urls.length > 1 ? `${lb.i + 1} / ${lb.urls.length}` : "";
+}
+const closeLightbox = () => { $("#lightbox").hidden = true; };
+$("#lbClose").addEventListener("click", closeLightbox);
+$("#lbPrev").addEventListener("click", () => { lb.i = (lb.i - 1 + lb.urls.length) % lb.urls.length; drawLightbox(); });
+$("#lbNext").addEventListener("click", () => { lb.i = (lb.i + 1) % lb.urls.length; drawLightbox(); });
+$("#lightbox").addEventListener("click", (e) => { if (e.target.id === "lightbox") closeLightbox(); });
+document.addEventListener("keydown", (e) => {
+  if ($("#lightbox").hidden) return;
+  if (e.key === "Escape") { e.stopImmediatePropagation(); closeLightbox(); }
+  if (e.key === "ArrowLeft") $("#lbPrev").click();
+  if (e.key === "ArrowRight") $("#lbNext").click();
+}, true);
+
+/* home rows: deals, recently viewed */
+function renderDeals() {
+  const sec = $("#dealsSec"), deals = (state.offers.deals || []).filter((p) => p.availableQuantity > 0);
+  const strip = $("#offerStrip");
+  strip.innerHTML = state.offers.combos.map((c) => `<span>✦ ${esc(c.title)}${c.scentFamily ? ` <small>(${esc(famName(c.scentFamily))})</small>` : ""}</span>`).join("");
+  strip.hidden = !state.offers.combos.length;
+  sec.hidden = !deals.length && !state.offers.combos.length;
+  $("#dealsGrid").innerHTML = deals.map(cardHtml).join("");
+  $("#dealsGrid").hidden = !deals.length;
+}
+const onePerPerfume = (list) => { const seen = new Set(); return list.filter((p) => { const k = p.variantGroup || p.slug; if (seen.has(k)) return false; seen.add(k); return true; }); };
+function renderRecent() {
+  const items = onePerPerfume(recent.list().map((sl) => state.products.find((x) => x.slug === sl)).filter(Boolean)).slice(0, 8);
+  $("#recentSec").hidden = !items.length;
+  $("#recentGrid").innerHTML = items.map(cardHtml).join("");
+}
 
 /* ---------------- wishlist ---------------- */
 async function toggleWish(productId) {
@@ -257,13 +496,13 @@ async function refreshCart() {
   catch { state.cart = null; store.del(CART_KEY); }
   updateBadges();
 }
-async function addToCart(productId, quantity = 1, btn) {
+async function addToCart(productId, quantity = 1, btn, silent = false) {
   if (btn) btn.disabled = true;
   try {
     const cart = await ensureCart();
     state.cart = (await api(`/carts/${cart.sessionToken}/items`, { method: "POST", body: { productId: Number(productId), quantity } })).cart;
     const item = state.cart.items.find((i) => Number(i.productId) === Number(productId));
-    toast(`${item ? item.name : "Fragrance"} added to your bag`);
+    if (!silent) toast(`${item ? item.name : "Fragrance"} added to your bag`);
     updateBadges(); return true;
   } catch (err) { toast(err.message); return false; }
   finally { if (btn) btn.disabled = false; }
@@ -274,15 +513,18 @@ async function setQty(productId, quantity) {
     state.cart = (quantity <= 0
       ? await api(`/carts/${t}/items/${productId}`, { method: "DELETE" })
       : await api(`/carts/${t}/items/${productId}`, { method: "PATCH", body: { quantity } })).cart;
-    state.coupon = null;
   } catch (err) { toast(err.message); }
-  renderCart(); updateBadges();
+  await renderCart(); updateBadges();
 }
-function totals() {
-  const c = state.cart; const sub = c ? c.subtotalPaise : 0;
-  const disc = state.coupon ? Math.min(state.coupon.discountPaise, sub) : 0;
-  const ship = sub === 0 || sub >= FREE_DELIVERY ? 0 : DELIVERY_FEE;
-  return { sub, disc, ship, total: sub - disc + ship };
+/* the server prices the bag (coupons, combos, points, gift wrap) — the page only displays it */
+async function getQuote(extra = {}) {
+  if (!state.cart?.items?.length) { state.quote = null; return null; }
+  try {
+    const { quote } = await api(`/carts/${state.cart.sessionToken}/quote`, { method: "POST", auth: "optional",
+      body: { couponCode: state.couponCode || undefined, redeemPoints: extra.redeemPoints || 0, giftWrap: !!extra.giftWrap } });
+    state.quote = quote;
+  } catch { state.quote = null; }
+  return state.quote;
 }
 function updateBadges() {
   const n = state.cart?.itemCount || 0;
@@ -290,21 +532,29 @@ function updateBadges() {
   const w = state.account?.wishlist?.length || 0;
   $("#wishCount").textContent = w; $("#wishCount").hidden = !w;
 }
-function renderCart() {
+const summaryRows = (q) => `
+  <div class="sumrow"><span>Subtotal</span><span>${inr(q.subtotalPaise)}</span></div>
+  ${q.comboDiscountPaise ? `<div class="sumrow disc"><span>Offer: ${esc(q.comboTitle)}</span><span>−${inr(q.comboDiscountPaise)}</span></div>` : ""}
+  ${q.couponDiscountPaise ? `<div class="sumrow disc"><span>Coupon ${esc(q.couponCode)}</span><span>−${inr(q.couponDiscountPaise)}</span></div>` : ""}
+  ${q.pointsDiscountPaise ? `<div class="sumrow disc"><span>BUVA points (${q.pointsRedeemed})</span><span>−${inr(q.pointsDiscountPaise)}</span></div>` : ""}
+  <div class="sumrow"><span>Delivery</span><span>${q.shippingPaise ? inr(q.shippingPaise) : "Free"}</span></div>
+  ${q.giftWrap ? `<div class="sumrow"><span>Gift wrap</span><span>${q.giftWrapPaise ? inr(q.giftWrapPaise) : "Free"}</span></div>` : ""}
+  <div class="sumrow total"><span>Total</span><span>${inr(q.totalPaise)}</span></div>
+  ${q.discountPaise ? `<div class="saving">You save ${inr(q.discountPaise)} on this order</div>` : ""}`;
+
+async function renderCart() {
   const c = state.cart, items = c?.items || [];
-  const t = totals();
   $("#drawerTitle").textContent = `Your bag${c?.itemCount ? ` (${c.itemCount})` : ""}`;
   const meter = $("#shipMeter");
   meter.hidden = !items.length;
-  if (items.length) {
-    const left = FREE_DELIVERY - t.sub;
-    meter.innerHTML = (left > 0 ? `You're <b>${inr(left)}</b> away from free delivery` : `<b>You've unlocked free delivery ✦</b>`)
-      + `<div class="meter"><i style="width:${Math.min(100, (t.sub / FREE_DELIVERY) * 100)}%"></i></div>`;
-  }
   if (!items.length) {
     $("#cartBody").innerHTML = `<div class="empty-state"><svg viewBox="0 0 24 24"><path d="M6 8h12l-1 12H7L6 8Z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg><p>Your bag is empty.</p><br><a class="btn btn-line" href="#shop" data-close>Continue shopping</a></div>`;
     $("#cartFoot").hidden = true; return;
   }
+  const [q, cps] = await Promise.all([getQuote(), api("/coupons/available?sessionToken=" + encodeURIComponent(c.sessionToken)).catch(() => ({ coupons: [] }))]);
+  const left = (q?.freeShippingFromPaise || 150000) - c.subtotalPaise;
+  meter.innerHTML = (left > 0 ? `You're <b>${inr(left)}</b> away from free delivery` : `<b>You've unlocked free delivery ✦</b>`)
+    + `<div class="meter"><i style="width:${Math.min(100, (c.subtotalPaise / (q?.freeShippingFromPaise || 150000)) * 100)}%"></i></div>`;
   $("#cartBody").innerHTML = items.map((i) => `
     <div class="line-item">
       <div class="media">${picture(i.imageUrl, i.imageAlt || i.name)}</div>
@@ -315,47 +565,68 @@ function renderCart() {
         <button class="linkbtn" data-qty="${i.productId}" data-to="0">Remove</button>
       </div>
       <div class="price">${inr(i.lineTotalPaise)}</div>
-    </div>`).join("");
+    </div>`).join("")
+    + (q?.comboNudge ? `<div class="nudge">✦ Add <b>${q.comboNudge.needed}</b> more ${q.comboNudge.scentFamily ? esc(famName(q.comboNudge.scentFamily)).toLowerCase() + " " : ""}fragrance${q.comboNudge.needed > 1 ? "s" : ""} to unlock <b>${esc(q.comboNudge.title)}</b>. <a href="#shop" data-close>Browse</a></div>` : "");
+  const coupons = cps.coupons || [];
   $("#cartFoot").hidden = false;
   $("#cartFoot").innerHTML = `
-    <div class="promo"><label class="sr-only" for="promoIn">Coupon code</label><input id="promoIn" placeholder="Coupon code" value="${esc(state.coupon?.code || "")}" ${state.coupon ? "disabled" : ""}><button id="promoBtn">${state.coupon ? "Remove" : "Apply"}</button></div>
-    <div class="msg" id="promoMsg"></div>
-    <div class="sumrow"><span>Subtotal</span><span>${inr(t.sub)}</span></div>
-    ${t.disc ? `<div class="sumrow disc"><span>Coupon ${esc(state.coupon.code)}</span><span>−${inr(t.disc)}</span></div>` : ""}
-    <div class="sumrow"><span>Delivery</span><span>${t.ship ? inr(t.ship) : "Free"}</span></div>
-    <div class="sumrow total"><span>Total</span><span>${inr(t.total)}</span></div>
+    ${coupons.length ? `<div class="coupons"><div class="h6" style="margin:0 0 6px">Available coupons</div>${coupons.map((cp) => `
+      <div class="coupon ${state.couponCode === cp.code ? "on" : ""}"><div><b>${esc(cp.code)}</b> · ${esc(cp.label)}<div class="sub">${esc(cp.description || "")}${cp.eligible ? "" : ` · add ${inr(cp.shortfallPaise)} more to use`}</div></div>
+      ${state.couponCode === cp.code ? `<button class="linkbtn" data-coupon-remove>Remove</button>` : `<button class="btn btn-sm btn-line" data-coupon="${esc(cp.code)}" ${cp.eligible ? "" : "disabled"}>Apply</button>`}</div>`).join("")}</div>` : ""}
+    <div class="promo"><label class="sr-only" for="promoIn">Coupon code</label><input id="promoIn" placeholder="Have a code?" value="${esc(state.couponCode || "")}" ${state.couponCode ? "disabled" : ""}><button id="promoBtn">${state.couponCode ? "Remove" : "Apply"}</button></div>
+    <div class="msg ${q?.couponError ? "err" : q?.couponCode ? "ok" : ""}" id="promoMsg">${q?.couponError ? esc(q.couponError) : q?.couponCode ? `${esc(q.couponCode)} applied — you save ${inr(q.couponDiscountPaise)}` : ""}</div>
+    ${(q?.notes || []).map((n) => `<div class="sub" style="margin-bottom:6px">${esc(n)}</div>`).join("")}
+    ${q ? summaryRows(q) : `<div class="sumrow total"><span>Subtotal</span><span>${inr(c.subtotalPaise)}</span></div>`}
+    ${q?.pointsToEarn ? `<div class="sub" style="margin:-8px 0 12px">✦ ${getToken() ? `Earn <b>${q.pointsToEarn}</b> BUVA points on this order` : `Sign in to earn ${q.pointsToEarn} BUVA points on this order`}</div>` : ""}
     <button class="btn btn-dark full" id="checkoutBtn">Checkout</button>`;
-  $("#promoBtn").onclick = applyCoupon;
+  $("#promoBtn").onclick = () => applyCoupon(state.couponCode ? null : $("#promoIn").value);
+  $$("[data-coupon]", $("#cartFoot")).forEach((b) => b.onclick = () => applyCoupon(b.dataset.coupon));
+  const rm = $("[data-coupon-remove]", $("#cartFoot")); if (rm) rm.onclick = () => applyCoupon(null);
   $("#checkoutBtn").onclick = openCheckout;
 }
 $("#cartBody").addEventListener("click", (e) => { const b = e.target.closest("[data-qty]"); if (b) { b.disabled = true; setQty(b.dataset.qty, Number(b.dataset.to)); } });
-async function applyCoupon() {
-  const msg = $("#promoMsg");
-  if (state.coupon) { state.coupon = null; renderCart(); return; }
-  const code = $("#promoIn").value.trim().toUpperCase();
-  if (!code) { msg.className = "msg err"; msg.textContent = "Enter a coupon code."; return; }
-  try {
-    state.coupon = (await api("/coupons/validate", { method: "POST", body: { code, sessionToken: state.cart.sessionToken } })).coupon;
-    renderCart(); $("#promoMsg").className = "msg ok"; $("#promoMsg").textContent = `${state.coupon.code} applied — you save ${inr(state.coupon.discountPaise)}`;
-  } catch (err) { msg.className = "msg err"; msg.textContent = err.message; }
+async function applyCoupon(code) {
+  if (code === null) { state.couponCode = null; return renderCart(); }
+  code = String(code || "").trim().toUpperCase();
+  if (!code) { const m = $("#promoMsg"); m.className = "msg err"; m.textContent = "Enter a coupon code."; return; }
+  state.couponCode = code;
+  await renderCart();
+  if (state.quote?.couponError || !state.quote?.couponCode) {
+    const msg = state.quote?.couponError || "Coupon couldn't be applied";
+    state.couponCode = null; await renderCart();
+    const m = $("#promoMsg"); m.className = "msg err"; m.textContent = msg;
+  }
 }
 async function openCart() {
-  await refreshCart(); renderCart();
+  await refreshCart();
   $("#cartDrawer").classList.add("show"); $("#overlay").classList.add("show");
+  await renderCart();
 }
 $("#cartBtn").addEventListener("click", openCart);
 
 /* ---------------- checkout ---------------- */
 const STATES = ["Tamil Nadu", "Karnataka", "Kerala", "Andhra Pradesh", "Telangana", "Puducherry", "Maharashtra", "Delhi", "Gujarat", "West Bengal", "Uttar Pradesh", "Rajasthan", "Madhya Pradesh", "Punjab", "Haryana", "Odisha", "Bihar", "Assam", "Goa", "Jharkhand", "Chhattisgarh", "Uttarakhand", "Himachal Pradesh", "Jammu and Kashmir", "Chandigarh", "Other"];
-function openCheckout() {
-  const t = totals(), c = state.cart, acc = state.account;
+const minRedeem = () => state.offers.points?.minRedeemPoints ?? 50;
+const pointValue = () => state.offers.points?.pointValuePaise ?? 100;
+async function checkoutQuote() {
+  const ck = state.checkout;
+  const first = await getQuote({ giftWrap: ck.giftWrap, redeemPoints: 0 });
+  if (!first || !ck.usePoints || first.maxRedeemablePoints < 1) return first;
+  return getQuote({ giftWrap: ck.giftWrap, redeemPoints: first.maxRedeemablePoints });
+}
+async function openCheckout() {
+  const c = state.cart, acc = state.account;
+  if (!c?.items?.length) return;
   const me = acc?.customer || {}, addr = acc?.addresses?.find((a) => a.isDefault) || acc?.addresses?.[0] || {};
   const rp = state.razorpay.configured;
   const v = (x) => esc(x || "");
+  const q = await checkoutQuote();
+  if (!q) { toast("Couldn't price your bag — please try again"); return; }
+  const ck = state.checkout, fee = q.giftWrapFeePaise;
   openModal(`<div class="co">
     <form class="co-form" id="coForm" novalidate>
       <h2>Checkout</h2>
-      ${acc ? `<p class="sub">Signed in as ${esc(me.email)}</p>` : `<p class="sub">Have an account? <button type="button" class="linkbtn" style="margin:0" id="coLogin">Sign in</button> to track orders and get invoices in your account.</p>`}
+      ${acc ? `<p class="sub">Signed in as ${esc(me.email)}</p>` : `<p class="sub">Have an account? <button type="button" class="linkbtn" style="margin:0" id="coLogin">Sign in</button> to earn BUVA points, track orders and get invoices.</p>`}
       <h6>Contact</h6>
       <div class="fgrid">
         <div class="field w2"><label for="cName">Full name</label><input id="cName" name="customerName" autocomplete="name" required value="${v(me.fullName)}"></div>
@@ -368,30 +639,42 @@ function openCheckout() {
         <div class="field w2"><label for="cL2">Apartment, landmark (optional)</label><input id="cL2" name="line2" autocomplete="address-line2" value="${v(addr.line2)}"></div>
         <div class="field"><label for="cCity">City</label><input id="cCity" name="city" autocomplete="address-level2" required value="${v(addr.city)}"></div>
         <div class="field"><label for="cPin">PIN code</label><input id="cPin" name="postalCode" inputmode="numeric" maxlength="6" autocomplete="postal-code" required value="${v(addr.postalCode)}"></div>
-        <div class="field w2"><label for="cState">State</label><select id="cState" name="state">${STATES.map((s) => `<option ${s === (addr.state || "Tamil Nadu") ? "selected" : ""}>${s}</option>`).join("")}</select></div>
-        <div class="field w2"><label for="cNotes">Order notes (optional)</label><input id="cNotes" name="customerNotes" maxlength="500" placeholder="Gift message, delivery instructions…"></div>
+        <div class="field w2"><label for="cState">State</label><select id="cState" name="state">${STATES.map((s2) => `<option ${s2 === (addr.state || "Tamil Nadu") ? "selected" : ""}>${s2}</option>`).join("")}</select></div>
+        <div class="field w2"><label for="cNotes">Delivery instructions (optional)</label><input id="cNotes" name="customerNotes" maxlength="500" placeholder="Landmark, preferred time…"></div>
       </div>
       ${acc ? `<label class="check"><input type="checkbox" name="saveAddress" ${acc.addresses?.length ? "" : "checked"}> Save this address to my account</label>` : ""}
+      <h6>Gift wrap</h6>
+      <label class="check" style="margin-top:0"><input type="checkbox" id="cGift" ${ck.giftWrap ? "checked" : ""}> Wrap it as a gift${fee ? ` (+${inr(fee)})` : " (free)"} — prices are hidden on the packing slip</label>
+      <div class="field" id="giftMsgWrap" ${ck.giftWrap ? "" : "hidden"} style="margin-top:8px"><label for="cGiftMsg">Gift message (optional)</label><textarea id="cGiftMsg" maxlength="200" rows="2" placeholder="Happy birthday! With love…">${esc(ck.giftMessage)}</textarea></div>
+      ${acc ? `<h6>BUVA points</h6>${q.maxRedeemablePoints >= minRedeem()
+        ? `<label class="check" style="margin-top:0"><input type="checkbox" id="cPoints" ${ck.usePoints ? "checked" : ""}> Use ${q.maxRedeemablePoints} of your ${q.pointsBalance} points — save ${inr(q.maxRedeemablePoints * pointValue())}</label>`
+        : `<p class="sub">You have <b>${q.pointsBalance}</b> BUVA points.${q.pointsBalance < minRedeem() ? ` You can redeem once you have ${minRedeem()}.` : ""} You'll earn ${q.pointsToEarn} on this order.</p>`}` : ""}
       <h6>Payment</h6>
       <div class="pay">
         <label class="${rp ? "" : "disabled"}"><input type="radio" name="paymentMethod" value="razorpay" ${rp ? "checked" : "disabled"}> Pay online — UPI, cards, netbanking (Razorpay)${rp ? "" : " · unavailable"}</label>
         <label><input type="radio" name="paymentMethod" value="cod" ${rp ? "" : "checked"}> Cash on delivery</label>
       </div>
       <div class="msg err" id="coErr" role="alert"></div>
-      <button class="btn btn-dark full" type="submit" id="coSubmit">Place order · ${inr(t.total)}</button>
+      <button class="btn btn-dark full" type="submit" id="coSubmit">Place order · ${inr(q.totalPaise)}</button>
     </form>
     <div class="co-sum">
       <div class="h6" style="margin-top:0">Order summary</div>
       ${c.items.map((i) => `<div class="co-item"><div class="media">${picture(i.imageUrl, i.name)}<i>${i.quantity}</i></div><div class="nm"><b>${esc(i.name)}</b><br><span class="sub">${esc(i.concentration)} · ${i.sizeMl} ml</span></div><span>${inr(i.lineTotalPaise)}</span></div>`).join("")}
-      <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:14px">
-        <div class="sumrow"><span>Subtotal</span><span>${inr(t.sub)}</span></div>
-        ${t.disc ? `<div class="sumrow disc"><span>Coupon ${esc(state.coupon.code)}</span><span>−${inr(t.disc)}</span></div>` : ""}
-        <div class="sumrow"><span>Delivery</span><span>${t.ship ? inr(t.ship) : "Free"}</span></div>
-        <div class="sumrow total"><span>Total</span><span>${inr(t.total)}</span></div>
+      <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:14px" id="coTotals">
+        ${summaryRows(q)}
+        ${q.pointsToEarn && acc ? `<div class="sub">✦ You'll earn ${q.pointsToEarn} BUVA points when it's delivered</div>` : ""}
         <div class="sub">Prices include GST. A GST invoice is issued with your order.</div>
       </div>
     </div></div>`);
   const login = $("#coLogin"); if (login) login.onclick = () => openAccount("login", true);
+  const refresh = async () => {
+    const nq = await checkoutQuote(); if (!nq) return;
+    $("#coTotals").innerHTML = summaryRows(nq) + (nq.pointsToEarn && acc ? `<div class="sub">✦ You'll earn ${nq.pointsToEarn} BUVA points when it's delivered</div>` : "") + `<div class="sub">Prices include GST. A GST invoice is issued with your order.</div>`;
+    const btn = $("#coSubmit"); if (btn && !btn.disabled) btn.textContent = "Place order · " + inr(nq.totalPaise);
+  };
+  $("#cGift").onchange = (e) => { ck.giftWrap = e.target.checked; $("#giftMsgWrap").hidden = !ck.giftWrap; refresh(); };
+  $("#cGiftMsg").oninput = (e) => { ck.giftMessage = e.target.value; };
+  const pts = $("#cPoints"); if (pts) pts.onchange = (e) => { ck.usePoints = e.target.checked; refresh(); };
   $("#coForm").addEventListener("submit", placeOrder);
   $("#coForm").addEventListener("input", (e) => e.target.classList.remove("err"));
 }
@@ -410,21 +693,24 @@ async function placeOrder(e) {
   });
   if (bad) { err.textContent = "Please check the highlighted fields."; return; }
   err.textContent = ""; btn.disabled = true; btn.textContent = "Placing order…";
-  const paymentMethod = f.elements.paymentMethod.value;
+  const ck = state.checkout;
   const body = {
     customerName: val("customerName"), email: val("email"), phone: val("phone"),
     shippingAddress: { recipientName: val("customerName"), line1: val("line1"), line2: val("line2"), city: val("city"), state: val("state"), postalCode: val("postalCode"), countryCode: "IN" },
-    paymentMethod, couponCode: state.coupon?.code || undefined, customerNotes: val("customerNotes") || undefined,
+    paymentMethod: f.elements.paymentMethod.value, couponCode: state.couponCode || undefined, customerNotes: val("customerNotes") || undefined,
     saveAddress: !!f.elements.saveAddress?.checked,
+    giftWrap: ck.giftWrap, giftMessage: ck.giftWrap ? ck.giftMessage.trim() || undefined : undefined,
+    redeemPoints: ck.usePoints && state.quote ? state.quote.pointsRedeemed : 0,
   };
   try {
     const { order, payment } = await api(`/carts/${state.cart.sessionToken}/checkout`, { method: "POST", body, auth: "optional" });
-    store.del(CART_KEY); state.cart = null; state.coupon = null; updateBadges();
+    store.del(CART_KEY); state.cart = null; state.couponCode = null; state.quote = null;
+    state.checkout = { giftWrap: false, giftMessage: "", usePoints: false }; updateBadges();
     if (getToken()) loadAccount().catch(() => {});
     if (payment) await payWithRazorpay(order, payment);
     else showSuccess(order);
   } catch (ex) {
-    err.textContent = ex.message; btn.disabled = false; btn.textContent = "Place order · " + inr(totals().total);
+    err.textContent = ex.message; btn.disabled = false; btn.textContent = "Place order · " + inr(state.quote?.totalPaise || 0);
   }
 }
 
@@ -463,6 +749,8 @@ function showSuccess(order, note) {
     <p>Order <b>${esc(order.orderNumber)}</b> ${paid ? "is paid and" : ""} has been placed.</p>
     <p>${cod ? "Pay in cash when your order arrives." : paid ? "A payment confirmation has been sent to " + esc(order.email) + "." : ""}</p>
     ${note ? `<p style="color:var(--wine)">${esc(note)}</p>` : ""}
+    ${order.discountPaise ? `<p>You saved <b>${inr(order.discountPaise)}</b>${order.giftWrap ? " — and it's gift wrapped 🎁" : ""}.</p>` : order.giftWrap ? `<p>It's gift wrapped 🎁</p>` : ""}
+    ${order.pointsToEarn ? `<p>${getToken() ? `You'll earn <b>${order.pointsToEarn} BUVA points</b> when it's delivered.` : `Create an account next time to earn ${order.pointsToEarn} BUVA points on orders like this.`}</p>` : ""}
     <p>We'll email updates to ${esc(order.email)}.${getToken() ? " You can track it under My account." : ""}</p><br>
     ${getToken() ? `<button class="btn btn-line" id="goOrders">View my orders</button> ` : ""}<button class="btn btn-dark" data-close>Continue shopping</button>
   </div>`, true);
@@ -520,12 +808,13 @@ function renderAuth(mode, returnToCheckout) {
 }
 
 async function renderAccount(tab = "orders") {
-  if (!state.account) await loadAccount();
+  if (!state.account || tab === "orders") await loadAccount();   // orders change status — always fetch fresh
   const a = state.account;
   if (!a) return renderAuth("login");
-  const tabs = [["orders", "Orders"], ["wishlist", "Wishlist"], ["addresses", "Addresses"], ["support", "Support"], ["profile", "Profile"]];
+  const tabs = [["orders", "Orders"], ["points", "BUVA points"], ["wishlist", "Wishlist"], ["addresses", "Addresses"], ["support", "Support"], ["profile", "Profile"]];
   const body = {
     orders: () => a.orders.length ? a.orders.map(orderHtml).join("") : `<div class="empty-state"><p>No orders yet.</p><br><a class="btn btn-line" href="#shop" data-close>Start shopping</a></div>`,
+    points: () => `<div id="ptsBox"><p class="sub">Loading your points…</p></div>`,
     wishlist: () => a.wishlist.length ? a.wishlist.map((w) => `<div class="wl"><div class="media">${picture(w.imageUrl, w.name)}</div><div class="nm"><b>${esc(w.name)}</b><div class="sub">${inr(w.pricePaise)}</div></div><button class="btn btn-sm btn-dark" data-open-p="${esc(w.slug)}">View</button><button class="linkbtn" data-unwish="${w.productId}">Remove</button></div>`).join("") : `<p class="sub">Tap ♥ on any fragrance to save it here.</p>`,
     addresses: () => (a.addresses.length ? a.addresses.map((x) => `<div class="addr"><b>${esc(x.label)}</b>${x.isDefault ? ` <span class="pill">Default</span>` : ""}<div>${esc(x.recipientName)} · ${esc(x.phone)}</div><div class="sub">${esc(x.line1)}${x.line2 ? ", " + esc(x.line2) : ""}, ${esc(x.city)}, ${esc(x.state)} ${esc(x.postalCode)}</div><div class="actions" style="margin-top:8px">${x.isDefault ? "" : `<button class="linkbtn" style="margin:0 12px 0 0" data-default-addr="${x.id}">Make default</button>`}<button class="linkbtn" style="margin:0" data-del-addr="${x.id}">Delete</button></div></div>`).join("") : `<p class="sub">No saved addresses. Tick “Save this address” at checkout to add one.</p>`),
     support: () => `${a.supportTickets.length ? a.supportTickets.map((s) => `<div class="order"><div class="top"><b>${esc(s.topic)}</b><span class="pill ${s.status === "resolved" ? "delivered" : ""}">${esc(label(s.status))}</span></div><div class="sub">${fmtDate(s.createdAt)}</div><p style="margin-top:6px;font-size:14px">${esc(s.message)}</p>${s.customerReply ? `<p style="margin-top:8px;font-size:14px;border-left:2px solid var(--gold);padding-left:10px"><b>BUVA:</b> ${esc(s.customerReply)}</p>` : ""}</div>`).join("") : `<p class="sub">No support requests yet.</p>`}<br><a class="btn btn-line btn-sm" href="#contact" data-close>New request</a>`,
@@ -534,7 +823,8 @@ async function renderAccount(tab = "orders") {
         <div class="field"><label>Email</label><input value="${esc(a.customer.email)}" disabled></div>
         <div class="field"><label for="pPhone">Mobile</label><input id="pPhone" name="phone" value="${esc(a.customer.phone || "")}" required></div>
         <div class="w2"><label class="check"><input type="checkbox" name="orderUpdates" ${a.notificationPreferences.orderUpdates ? "checked" : ""}> Email me order updates</label>
-        <label class="check"><input type="checkbox" name="marketing" ${a.notificationPreferences.marketing ? "checked" : ""}> Send me launches and offers</label></div>
+        <label class="check"><input type="checkbox" name="marketing" ${a.notificationPreferences.marketing ? "checked" : ""}> Send me launches and offers</label>
+        <label class="check"><input type="checkbox" name="priceAlerts" checked> Email me when a wishlist fragrance drops in price</label></div>
         <div class="w2"><div class="msg" id="pMsg"></div><button class="btn btn-dark" type="submit">Save changes</button> <button class="btn btn-line" type="button" id="logoutBtn">Sign out</button></div>
       </form>`,
   };
@@ -589,13 +879,23 @@ function wireAccount(tab) {
       slot.innerHTML = `<form class="mini-form"><b style="font-size:13px">Review ${esc(rv.dataset.pname)}</b>
         <select name="rating" aria-label="Rating">${[5, 4, 3, 2, 1].map((n) => `<option value="${n}">${"★".repeat(n)} (${n})</option>`).join("")}</select>
         <textarea name="reviewText" rows="3" maxlength="2000" placeholder="How does it wear on you? (optional)"></textarea>
+        <label style="font-size:12px">Add up to 3 photos (optional)<input type="file" name="photos" accept="image/jpeg,image/png,image/webp" multiple></label>
         <div class="msg err"></div><button class="btn btn-sm btn-dark" type="submit">Submit review</button></form>`;
       slot.querySelector("form").onsubmit = async (ev) => {
-        ev.preventDefault(); const fd = new FormData(ev.target);
+        ev.preventDefault(); const form = ev.target, fd = new FormData(form), msg = form.querySelector(".msg"), btn = form.querySelector("button[type=submit]");
+        const files = [...form.photos.files];
+        if (files.length > 3) { msg.textContent = "Choose at most 3 photos."; return; }
+        if (files.some((f2) => f2.size > 5 * 1024 * 1024)) { msg.textContent = "Each photo must be 5 MB or smaller."; return; }
+        btn.disabled = true;
         try {
-          await api(`/account/orders/${rv.dataset.review}/reviews`, { method: "POST", auth: true, body: { productId: Number(rv.dataset.pid), rating: Number(fd.get("rating")), reviewText: fd.get("reviewText") } });
+          const { review } = await api(`/account/orders/${rv.dataset.review}/reviews`, { method: "POST", auth: true, body: { productId: Number(rv.dataset.pid), rating: Number(fd.get("rating")), reviewText: fd.get("reviewText") } });
+          if (files.length) {
+            const up = new FormData(); files.forEach((f2) => up.append("photos", f2));
+            const res = await fetch(`/api/account/reviews/${review.id}/photos`, { method: "POST", headers: { Authorization: "Bearer " + getToken() }, body: up });
+            if (!res.ok) { const d = await res.json().catch(() => ({})); toast("Review saved, but photos failed: " + (d.error || res.status)); }
+          }
           toast("Thanks! Your review will appear once approved."); await loadAccount(); renderAccount("orders");
-        } catch (ex) { ev.target.querySelector(".msg").textContent = ex.message; }
+        } catch (ex) { msg.textContent = ex.message; btn.disabled = false; }
       };
       return;
     }
@@ -615,12 +915,22 @@ function wireAccount(tab) {
       };
     }
   });
+  if (tab === "points") {
+    api("/account/points", { auth: true }).then((d) => {
+      const kindLabel = { earn: "Earned", redeem: "Redeemed", refund: "Returned", reverse: "Removed", adjust: "Adjustment" };
+      $("#ptsBox").innerHTML = `<div class="pts-card"><div><b>${d.balance}</b><span>BUVA points</span></div><div>Worth <b>${inr(d.valuePaise)}</b> on your next order</div></div>
+        <p class="sub" style="margin:10px 0 16px">Earn ${d.rules.pointsPer100Rupees} point for every ₹100 you spend, once your order is delivered. Each point is worth ${inr(d.rules.pointValuePaise)}; use them at checkout for up to ${d.rules.maxRedeemPercent}% of an order (from ${d.rules.minRedeemPoints} points).</p>
+        ${d.history.length ? d.history.map((h) => `<div class="pts-row"><span><b>${kindLabel[h.kind] || h.kind}</b> · ${esc(h.note || "")}<br><small class="sub">${fmtDate(h.createdAt)}</small></span><span class="${h.points > 0 ? "plus" : "minus"}">${h.points > 0 ? "+" : ""}${h.points}</span></div>`).join("") : `<p class="sub">No points yet — they'll appear here after your first delivered order.</p>`}`;
+    }).catch((ex) => { $("#ptsBox").innerHTML = `<p class="msg err">${esc(ex.message)}</p>`; });
+  }
   if (tab === "profile") {
+    api("/account/price-alerts", { auth: true }).then((d) => { const cb = $("#profileForm [name=priceAlerts]"); if (cb) cb.checked = d.enabled; }).catch(() => {});
     $("#profileForm").onsubmit = async (e) => {
       e.preventDefault(); const f = e.target, m = $("#pMsg");
       try {
         await api("/account/profile", { method: "PATCH", auth: true, body: { fullName: f.fullName.value, phone: f.phone.value } });
         await api("/account/notification-preferences", { method: "PUT", auth: true, body: { orderUpdates: f.orderUpdates.checked, marketing: f.marketing.checked } });
+        await api("/account/price-alerts", { method: "PUT", auth: true, body: { enabled: f.priceAlerts.checked } });
         await loadAccount(); m.className = "msg ok"; m.textContent = "Saved.";
       } catch (ex) { m.className = "msg err"; m.textContent = ex.message; }
     };
@@ -714,12 +1024,13 @@ async function init() {
     setToken(g); params.delete("google_session");
     history.replaceState(null, "", location.pathname + (params.toString() ? "?" + params : "") + location.hash);
   }
-  const [cats, prods, pay] = await Promise.allSettled([api("/categories"), api("/products?sort=featured"), api("/payments/config")]);
+  const [cats, prods, pay, offers] = await Promise.allSettled([api("/categories"), api("/products?sort=featured"), api("/payments/config"), api("/offers")]);
+  if (offers.status === "fulfilled") state.offers = offers.value;
   if (cats.status === "fulfilled") state.categories = cats.value.categories;
   if (prods.status === "fulfilled") state.products = prods.value.products;
   if (pay.status === "fulfilled") state.razorpay = pay.value.razorpay;
   if (prods.status === "rejected") { $("#grid").innerHTML = `<div class="empty">The store is temporarily unavailable. Please refresh in a moment.</div>`; }
-  renderFamilies(state.products); renderChips();
+  renderFamilies(state.products); renderChips(); renderDeals(); renderRecent();
   await Promise.all([loadAccount(), refreshCart()]);
   if (prods.status === "fulfilled") renderGrid();
   renderQuiz(); loadBanners();

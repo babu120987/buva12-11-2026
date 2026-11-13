@@ -16,6 +16,7 @@ import {
   validateInvoiceNumber
 } from "./invoices.js";
 import { orderConfirmationEmail, paymentConfirmationEmail } from "./order-emails.js";
+import { initCommerce } from "./commerce.js";
 const googleClientId = process.env.GOOGLE_CLIENT_ID || "";
 const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET || "";
 const googleCallbackUrl = process.env.GOOGLE_CALLBACK_URL || "";
@@ -178,7 +179,10 @@ const productSelect = `
     image.image_url AS "imageUrl",
     image.alt_text AS "imageAlt",
     COALESCE(review.average_rating, 0)::FLOAT AS "averageRating",
-    COALESCE(review.review_count, 0)::INTEGER AS "reviewCount"
+    COALESCE(review.review_count, 0)::INTEGER AS "reviewCount",
+    p.variant_group AS "variantGroup",
+    deal."dealEndsAt",
+    deal."dealTitle"
   FROM products p
   LEFT JOIN categories c ON c.id = p.category_id
   LEFT JOIN inventory i ON i.product_id = p.id
@@ -194,6 +198,12 @@ const productSelect = `
     FROM product_reviews
     WHERE product_id = p.id AND status = 'approved'
   ) review ON TRUE
+  LEFT JOIN LATERAL (
+    SELECT d.ends_at AS "dealEndsAt", d.title AS "dealTitle"
+    FROM deals d
+    WHERE d.product_id = p.id AND d.status = 'active' AND d.ends_at > NOW()
+    LIMIT 1
+  ) deal ON TRUE
 `;
 
 const asyncRoute = (handler) => async (request, response, next) => {
@@ -1214,6 +1224,10 @@ app.get("/api/products", asyncRoute(async (request, response) => {
   const sort = typeof request.query.sort === "string" ? request.query.sort : "featured";
   const minPrice = request.query.minPrice === undefined ? null : Number(request.query.minPrice);
   const maxPrice = request.query.maxPrice === undefined ? null : Number(request.query.maxPrice);
+  const minRating = request.query.minRating === undefined ? null : Number(request.query.minRating);
+  const inStock = request.query.inStock === "true";
+  const onDeal = request.query.onDeal === "true";
+  if (minRating !== null && (!Number.isFinite(minRating) || minRating < 1 || minRating > 5)) throw new ApiError(400, "Invalid minimum rating");
   const sortSql = {
     featured: "p.featured DESC, p.created_at, p.id",
     newest: "p.created_at DESC, p.id DESC",
@@ -1251,6 +1265,9 @@ app.get("/api/products", asyncRoute(async (request, response) => {
   }
   if (minPrice !== null) { values.push(minPrice); filters.push(`p.price_paise >= $${values.length}`); }
   if (maxPrice !== null) { values.push(maxPrice); filters.push(`p.price_paise <= $${values.length}`); }
+  if (minRating !== null) { values.push(minRating); filters.push(`COALESCE(review.average_rating, 0) >= $${values.length}`); }
+  if (inStock) filters.push("COALESCE(i.quantity - i.reserved_quantity, 0) > 0");
+  if (onDeal) filters.push('deal."dealEndsAt" IS NOT NULL');
   values.push(limit);
 
   const result = await pool.query(`
@@ -1537,6 +1554,7 @@ app.post("/api/carts/:sessionToken/checkout", asyncRoute(async (request, respons
         p.name AS product_name,
         p.sku,
         p.price_paise AS unit_price_paise,
+        p.scent_family,
         ci.quantity,
         COALESCE(i.quantity - i.reserved_quantity, 0) AS available
       FROM cart_items ci
@@ -1554,48 +1572,14 @@ app.post("/api/carts/:sessionToken/checkout", asyncRoute(async (request, respons
       }
     }
 
-    const subtotalPaise = itemsResult.rows.reduce(
-      (total, item) => total + item.unit_price_paise * item.quantity,
-      0
-    );
-    let couponId = null;
-    let discountPaise = 0;
-    let couponCode = null;
-    if (checkout.couponCode) {
-      const couponResult = await client.query(`
-        SELECT
-          c.id,
-          c.code,
-          c.discount_type,
-          c.discount_value,
-          c.minimum_order_paise,
-          c.usage_limit,
-          (SELECT COUNT(*)::INTEGER FROM orders o WHERE o.coupon_id = c.id AND o.status <> 'cancelled') AS usage_count
-        FROM coupons c
-        WHERE c.code = $1
-          AND c.active = TRUE
-          AND (c.starts_at IS NULL OR c.starts_at <= NOW())
-          AND (c.ends_at IS NULL OR c.ends_at >= NOW())
-        FOR UPDATE OF c
-      `, [checkout.couponCode]);
-      if (couponResult.rowCount === 0) throw new ApiError(400, "Coupon is invalid or expired");
-
-      const coupon = couponResult.rows[0];
-      if (subtotalPaise < coupon.minimum_order_paise) {
-        throw new ApiError(400, `Coupon requires a minimum order of ₹${Math.ceil(coupon.minimum_order_paise / 100)}`);
-      }
-      if (coupon.usage_limit !== null && coupon.usage_count >= coupon.usage_limit) {
-        throw new ApiError(400, "Coupon usage limit has been reached");
-      }
-      discountPaise = coupon.discount_type === "percentage"
-        ? Math.min(subtotalPaise, Math.floor(subtotalPaise * coupon.discount_value / 100))
-        : Math.min(coupon.discount_value, subtotalPaise);
-      couponId = coupon.id;
-      couponCode = coupon.code;
-    }
-
-    const shippingPaise = subtotalPaise >= 150000 ? 0 : 9900;
-    const totalPaise = subtotalPaise - discountPaise + shippingPaise;
+    // coupons, combo offers, BUVA points and gift wrap — same engine as the bag preview
+    const pricing = await commerce.computePricing(client, {
+      items: itemsResult.rows, customer, couponCode: checkout.couponCode,
+      redeemPoints: request.body?.redeemPoints, giftWrap: request.body?.giftWrap === true,
+      strict: true, lock: true
+    });
+    const giftMessage = commerce.parseGiftMessage(request.body);
+    const { subtotalPaise, discountPaise, shippingPaise, totalPaise, couponId, couponCode } = pricing;
     const orderNumber = `BUVA-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
     const razorpayOrder = checkout.paymentMethod === "razorpay"
       ? await createRazorpayOrder({
@@ -1631,6 +1615,7 @@ app.post("/api/carts/:sessionToken/checkout", asyncRoute(async (request, respons
       checkout.customerNotes
     ]);
     const createdOrder = orderResult.rows[0];
+    await commerce.recordOrderExtras(client, createdOrder.id, customer, pricing, giftMessage);
 
     if (razorpayOrder) {
       await client.query(`
@@ -1670,7 +1655,7 @@ app.post("/api/carts/:sessionToken/checkout", asyncRoute(async (request, respons
       billingAddress: checkout.shippingAddress,
       subtotalPaise,
       discountPaise,
-      shippingPaise,
+      shippingPaise: shippingPaise + pricing.giftWrapPaise,
       totalPaise,
       issuedAt: createdOrder.created_at
     });
@@ -1716,6 +1701,14 @@ app.post("/api/carts/:sessionToken/checkout", asyncRoute(async (request, respons
       couponCode,
       subtotalPaise,
       discountPaise,
+      couponDiscountPaise: pricing.couponDiscountPaise,
+      comboTitle: pricing.comboTitle,
+      comboDiscountPaise: pricing.comboDiscountPaise,
+      pointsRedeemed: pricing.pointsRedeemed,
+      pointsDiscountPaise: pricing.pointsDiscountPaise,
+      pointsToEarn: pricing.pointsToEarn,
+      giftWrap: pricing.giftWrap,
+      giftWrapPaise: pricing.giftWrapPaise,
       shippingPaise,
       totalPaise
     };
@@ -2881,6 +2874,7 @@ app.patch("/api/admin/orders/:identifier/status", asyncRoute(async (request, res
   });
 
   if (statusChanged) {
+    commerce.onOrderStatusChanged(order.id);
     try {
       const preference = order.customerId
         ? await pool.query("SELECT order_updates FROM notification_preferences WHERE customer_id=$1", [order.customerId])
@@ -2903,6 +2897,11 @@ app.patch("/api/admin/orders/:identifier/status", asyncRoute(async (request, res
   response.json({ order, allowedTransitions: [...allowedOrderTransitions[order.status]] });
 }));
 
+const commerce = initCommerce({
+  app, pool, ApiError, asyncRoute, requireAdmin, getCustomerSession, getCart, sendEmail,
+  productSelect, uploadsDir, withTransaction, siteUrl: process.env.PUBLIC_SITE_URL || "https://buva.shop"
+});
+
 app.use((error, _request, response, _next) => {
   if (error instanceof ApiError) {
     return response.status(error.status).json({ error: error.message });
@@ -2921,7 +2920,10 @@ app.use((_request, response) => {
   response.status(404).json({ error: "Not found" });
 });
 
-app.listen(port, () => console.log(`Buva backend listening on ${port}`));
+app.listen(port, () => {
+  console.log(`Buva backend listening on ${port}`);
+  commerce.startJobs();
+});
 
 const shutdown = async () => {
   await pool.end();

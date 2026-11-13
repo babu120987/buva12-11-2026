@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex,nofollow">
+<title>BUVA Admin — Offers &amp; catalogue</title>
+<link rel="icon" href="/favicon.ico">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#1c1418;--plum:#3a1f2b;--wine:#5b2a3a;--gold:#b98a4a;--cream:#f7f1ea;--paper:#fbf8f4;--line:#e6dccf;--muted:#7b6d68;--ok:#2f6b4a;--err:#b33a3a}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Manrope,system-ui,sans-serif;background:var(--paper);color:var(--ink);font-size:14px;line-height:1.5}
+button,input,select,textarea{font:inherit}
+button{cursor:pointer}
+header{background:var(--plum);color:var(--cream);padding:14px 28px;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+header b{font-family:'Cormorant Garamond',serif;font-size:26px;letter-spacing:.25em}
+header a{color:var(--cream);font-size:13px}
+nav{display:flex;gap:4px;flex-wrap:wrap;padding:10px 28px;border-bottom:1px solid var(--line);background:#fff;position:sticky;top:0;z-index:5}
+nav button{background:none;border:none;padding:8px 14px;border-radius:20px;font-weight:600;color:var(--muted)}
+nav button.on{background:var(--cream);color:var(--plum)}
+main{max-width:1180px;margin:0 auto;padding:26px 28px 60px}
+h1{font-family:'Cormorant Garamond',serif;font-weight:500;font-size:34px;margin-bottom:4px}
+.lead{color:var(--muted);margin-bottom:20px;max-width:760px}
+.card{background:#fff;border:1px solid var(--line);border-radius:6px;padding:18px;margin-bottom:16px}
+.card h3{font-size:13px;letter-spacing:.12em;text-transform:uppercase;margin-bottom:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;align-items:end}
+label{display:block;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+label input,label select,label textarea{display:block;width:100%;margin-top:4px;padding:9px 10px;border:1px solid var(--line);border-radius:4px;background:#fff;color:var(--ink);text-transform:none;letter-spacing:0;font-weight:400;font-size:14px}
+label.inline{display:flex;gap:8px;align-items:center;text-transform:none;letter-spacing:0;font-size:14px;color:var(--ink);font-weight:500}
+label.inline input{width:auto;margin:0}
+.btn{background:var(--plum);color:#fff;border:none;border-radius:4px;padding:10px 16px;font-weight:600}
+.btn:hover{background:var(--wine)}
+.btn.line{background:#fff;color:var(--plum);border:1px solid var(--plum)}
+.btn.sm{padding:6px 11px;font-size:12px}
+.btn.danger{background:#fff;color:var(--err);border:1px solid var(--err)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 9px;border-radius:20px;background:var(--cream);color:var(--plum);text-transform:capitalize}
+.pill.active{background:#e3f0e8;color:var(--ok)}
+.pill.ended,.pill.cancelled{background:#eee;color:#777}
+.imgs{display:flex;gap:8px;flex-wrap:wrap}
+.imgs figure{position:relative;width:86px}
+.imgs img{width:86px;height:104px;object-fit:cover;border-radius:4px;border:1px solid var(--line);background:#222}
+.imgs figcaption{display:flex;gap:4px;margin-top:4px}
+.imgs figcaption button{flex:1;font-size:11px;padding:3px 0;border:1px solid var(--line);background:#fff;border-radius:3px}
+.prod{display:grid;grid-template-columns:220px 1fr;gap:18px;padding:16px 0;border-bottom:1px solid var(--line)}
+.prod:last-child{border-bottom:none}
+.prod h4{font-size:16px}
+.sub{color:var(--muted);font-size:12px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:11px 20px;border-radius:30px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:9}
+.toast.show{opacity:1}
+.toast.err{background:var(--err)}
+.login{max-width:420px;margin:80px auto;background:#fff;border:1px solid var(--line);border-radius:6px;padding:30px}
+.stats{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.stats div{background:#fff;border:1px solid var(--line);border-radius:6px;padding:14px 18px;min-width:160px}
+.stats b{display:block;font-size:24px;font-family:'Cormorant Garamond',serif}
+.photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}
+.photos figure{background:#fff;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.photos img{width:100%;height:140px;object-fit:cover;display:block}
+.photos figcaption{padding:8px;font-size:12px}
+[hidden]{display:none!important}
+@media(max-width:700px){.prod{grid-template-columns:1fr}main{padding:20px 16px}}
+</style>
+</head>
+<body>
+<header><b>BUVA</b><span>Offers &amp; catalogue</span><a href="/admin/">← Back to main admin</a></header>
+
+<div class="login" id="login" hidden>
+  <h1>Admin access</h1>
+  <p class="lead">Enter the access key (ADMIN_API_KEY).</p>
+  <form id="loginForm"><label>Access key<input type="password" id="keyIn" autocomplete="current-password" required></label><br><button class="btn" type="submit">Open</button> <span class="sub" id="loginErr" style="color:var(--err)"></span></form>
+</div>
+
+<div id="app" hidden>
+<nav>
+  <button class="on" data-tab="deals">Deals</button>
+  <button data-tab="combos">Combo offers</button>
+  <button data-tab="coupons">Coupons in bag</button>
+  <button data-tab="catalog">Photos &amp; sizes</button>
+  <button data-tab="photos">Review photos</button>
+  <button data-tab="loyalty">Points &amp; alerts</button>
+</nav>
+<main>
+  <section data-panel="deals">
+    <h1>Deals</h1>
+    <p class="lead">A deal lowers a product's price between the start and end time, with a countdown on the store. The original price returns automatically when the deal ends or you cancel it. Don't edit that product's price in the main admin while its deal is running.</p>
+    <div class="card"><h3>New deal</h3>
+      <form id="dealForm" class="grid">
+        <label>Product<select name="productId" id="dealProduct" required></select></label>
+        <label>Deal price (₹)<input name="price" type="number" min="1" step="1" required></label>
+        <label>Starts<input name="startsAt" type="datetime-local"></label>
+        <label>Ends<input name="endsAt" type="datetime-local" required></label>
+        <label>Title<input name="title" maxlength="80" placeholder="Limited-time deal"></label>
+        <div><button class="btn" type="submit">Create deal</button></div>
+      </form>
+      <p class="sub" style="margin-top:8px">Leave "Starts" empty to begin now. Times are in your local time.</p>
+    </div>
+    <div class="card"><h3>All deals</h3><div id="dealsList"></div></div>
+  </section>
+
+  <section data-panel="combos" hidden>
+    <h1>Combo offers</h1>
+    <p class="lead">Applied automatically in the bag when the shopper has enough items, e.g. "Buy any 2, save 10%". Only the best combo applies. If it isn't stackable and a coupon is entered, the shopper gets whichever saves more.</p>
+    <div class="card"><h3>New combo</h3>
+      <form id="comboForm" class="grid">
+        <label>Title<input name="title" required maxlength="80" placeholder="Buy any 2, save 10%"></label>
+        <label>Minimum items<input name="minQuantity" type="number" min="2" max="20" value="2" required></label>
+        <label>Scent family<select name="scentFamily"><option value="">Any fragrance</option><option value="floral">Floral</option><option value="fresh">Fresh</option><option value="woody">Woody</option><option value="sets">Discovery &amp; gifts</option></select></label>
+        <label>Discount<select name="discountType"><option value="percentage">% off</option><option value="fixed">₹ off</option></select></label>
+        <label>Amount<input name="discountValue" type="number" min="1" required placeholder="10"></label>
+        <label>Ends (optional)<input name="endsAt" type="datetime-local"></label>
+        <label class="inline"><input type="checkbox" name="stackWithCoupons"> Can combine with coupons</label>
+        <div><button class="btn" type="submit">Create combo</button></div>
+      </form>
+    </div>
+    <div class="card"><h3>All combos</h3><div id="combosList"></div></div>
+  </section>
+
+  <section data-panel="coupons" hidden>
+    <h1>Coupons shown in the bag</h1>
+    <p class="lead">Coupons are created in the main admin under <b>Marketing</b>. Here you choose which ones shoppers see listed in their bag (with one-tap Apply), and the line of text shown under each.</p>
+    <div class="card"><div id="couponsList"></div></div>
+  </section>
+
+  <section data-panel="catalog" hidden>
+    <h1>Photos &amp; sizes</h1>
+    <p class="lead"><b>Photos:</b> upload several photos per product for the zoomable gallery. The first photo is the main image. <b>Sizes:</b> to sell one perfume in several sizes (30 / 50 / 100 ml), create each size as its own product in the main admin with its own price and stock. Then give them all the same <b>size group</b> here, e.g. <code>madurai-jasmine</code>.</p>
+    <div class="card" id="catalogList"></div>
+  </section>
+
+  <section data-panel="photos" hidden>
+    <h1>Review photos</h1>
+    <p class="lead">Photos customers attach to reviews. They appear on the store only after you approve the review (main admin → Reviews &amp; support). Delete any photo that isn't suitable.</p>
+    <div class="photos" id="photosList"></div>
+  </section>
+
+  <section data-panel="loyalty" hidden>
+    <h1>BUVA points &amp; alerts</h1>
+    <div class="stats" id="pointStats"></div>
+    <div class="card"><h3>Rules</h3><div id="pointRules" class="sub"></div></div>
+    <div class="card"><h3>Adjust a customer's points</h3>
+      <form id="adjustForm" class="grid">
+        <label>Customer email<input name="email" type="email" required></label>
+        <label>Points (+ add / − remove)<input name="points" type="number" required></label>
+        <label>Reason<input name="note" required minlength="3" maxlength="120" placeholder="Goodwill for late delivery"></label>
+        <div><button class="btn" type="submit">Apply</button></div>
+      </form>
+    </div>
+    <div class="card"><h3>Customers waiting for alerts</h3><div id="alertsList"></div><p class="sub" style="margin-top:8px">Emails go out within 5 minutes of a product coming back in stock or dropping in price, once Gmail is set up in <code>.env</code>.</p></div>
+  </section>
+</main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+"use strict";
+const KEY = "buvaAdminKey";
+let key = ""; try { key = sessionStorage.getItem(KEY) || ""; } catch {}
+let data = null;
+const $ = (s, el = document) => el.querySelector(s), $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const inr = (p) => "₹" + (Number(p || 0) / 100).toLocaleString("en-IN", { maximumFractionDigits: 0 });
+const when = (v) => v ? new Date(v).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—";
+let tt; const toast = (m, err) => { const t = $("#toast"); t.textContent = m; t.className = "toast show" + (err ? " err" : ""); clearTimeout(tt); tt = setTimeout(() => t.className = "toast", 2800); };
+
+async function api(path, { method = "GET", body, form } = {}) {
+  const headers = { "X-Admin-Key": key };
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  const res = await fetch("/api/admin/commerce" + path, { method, headers, body: form || (body === undefined ? undefined : JSON.stringify(body)) });
+  const d = await res.json().catch(() => ({}));
+  if (res.status === 401) { showLogin("That key isn't valid."); throw new Error("Unauthorized"); }
+  if (!res.ok) throw new Error(d.error || `Request failed (${res.status})`);
+  return d;
+}
+const act = async (fn, ok) => { try { await fn(); if (ok) toast(ok); await load(); } catch (e) { if (e.message !== "Unauthorized") toast(e.message, true); } };
+
+function showLogin(msg = "") { $("#app").hidden = true; $("#login").hidden = false; $("#loginErr").textContent = msg; try { sessionStorage.removeItem(KEY); } catch {} key = ""; }
+$("#loginForm").onsubmit = async (e) => { e.preventDefault(); key = $("#keyIn").value.trim(); try { sessionStorage.setItem(KEY, key); } catch {} await load(); };
+
+$$("nav button").forEach((b) => b.onclick = () => {
+  $$("nav button").forEach((x) => x.classList.toggle("on", x === b));
+  $$("[data-panel]").forEach((p) => p.hidden = p.dataset.panel !== b.dataset.tab);
+});
+
+async function load() {
+  if (!key) return showLogin();
+  try { data = await api("/overview"); } catch (e) { if (e.message !== "Unauthorized") toast(e.message, true); return; }
+  $("#login").hidden = true; $("#app").hidden = false;
+  render();
+}
+
+function render() {
+  const products = data.products;
+  // deals
+  $("#dealProduct").innerHTML = products.filter((p) => p.active).map((p) => `<option value="${p.id}">${esc(p.name)} · ${p.sizeMl} ml · now ${inr(p.pricePaise)}</option>`).join("");
+  $("#dealsList").innerHTML = data.deals.length ? `<table><tr><th>Product</th><th>Deal</th><th>Price</th><th>Runs</th><th>Status</th><th></th></tr>${data.deals.map((d) => `
+    <tr><td>${esc(d.productName)}</td><td>${esc(d.title)}</td><td><b>${inr(d.dealPricePaise)}</b>${d.originalPricePaise ? ` <s class="sub">${inr(d.originalPricePaise)}</s>` : ""}</td>
+    <td class="sub">${when(d.startsAt)} → ${when(d.endsAt)}</td><td><span class="pill ${esc(d.status)}">${esc(d.status)}</span></td>
+    <td>${["active", "scheduled"].includes(d.status) ? `<button class="btn sm danger" data-cancel-deal="${d.id}">${d.status === "active" ? "End now" : "Cancel"}</button>` : ""}</td></tr>`).join("")}</table>` : `<p class="sub">No deals yet.</p>`;
+  // combos
+  $("#combosList").innerHTML = data.combos.length ? `<table><tr><th>Offer</th><th>Rule</th><th>With coupons</th><th>Ends</th><th>Status</th><th></th></tr>${data.combos.map((c) => `
+    <tr><td><b>${esc(c.title)}</b></td><td>${c.minQuantity}+ ${c.scentFamily ? esc(c.scentFamily) + " " : ""}items → ${c.discountType === "percentage" ? c.discountValue + "% off" : inr(c.discountValue) + " off"}</td>
+    <td>${c.stackWithCoupons ? "Yes" : "No"}</td><td class="sub">${when(c.endsAt)}</td><td><span class="pill ${c.active ? "active" : "ended"}">${c.active ? "on" : "off"}</span></td>
+    <td><button class="btn sm line" data-toggle-combo="${c.id}" data-on="${c.active}">${c.active ? "Turn off" : "Turn on"}</button></td></tr>`).join("")}</table>` : `<p class="sub">No combo offers yet.</p>`;
+  // coupons
+  $("#couponsList").innerHTML = data.coupons.length ? `<table><tr><th>Code</th><th>Discount</th><th>Min order</th><th>Status</th><th>Show in bag</th><th>Text under coupon</th><th></th></tr>${data.coupons.map((c) => `
+    <tr data-coupon-row="${c.id}"><td><b>${esc(c.code)}</b></td><td>${c.discountType === "percentage" ? c.discountValue + "%" : inr(c.discountValue)}</td><td>${inr(c.minimumOrderPaise)}</td>
+    <td><span class="pill ${c.active ? "active" : "ended"}">${c.active ? "active" : "inactive"}</span></td>
+    <td><input type="checkbox" data-show ${c.showInStore ? "checked" : ""}></td>
+    <td><input data-desc maxlength="140" value="${esc(c.description || "")}" placeholder="e.g. 10% off your first order" style="width:100%;padding:7px;border:1px solid var(--line);border-radius:4px"></td>
+    <td><button class="btn sm" data-save-coupon="${c.id}">Save</button></td></tr>`).join("")}</table>` : `<p class="sub">No coupons — create them in the main admin → Marketing.</p>`;
+  // catalogue
+  $("#catalogList").innerHTML = products.map((p) => `
+    <div class="prod">
+      <div><h4>${esc(p.name)}</h4><div class="sub">${p.sizeMl} ml · ${inr(p.pricePaise)} · ${p.availableQuantity} in stock${p.active ? "" : " · hidden"}</div>
+        <form class="row" data-group-form="${p.id}" style="margin-top:10px"><label style="flex:1">Size group<input name="g" value="${esc(p.variantGroup || "")}" placeholder="e.g. ${esc(p.slug)}" pattern="[A-Za-z0-9-]*"></label><button class="btn sm" type="submit">Save</button></form>
+        ${p.variantGroup ? `<div class="sub" style="margin-top:4px">Sizes in “${esc(p.variantGroup)}”: ${products.filter((x) => x.variantGroup === p.variantGroup).map((x) => x.sizeMl + " ml").join(", ")}</div>` : ""}
+      </div>
+      <div>
+        <div class="imgs">${p.images.map((im, k) => `<figure><img src="${esc(im.url)}" alt="${esc(im.alt)}"><figcaption>
+          <button data-img-left="${im.id}" data-order="${k}" data-pid="${p.id}" ${k === 0 ? "disabled" : ""} title="Move earlier">◀</button>
+          <button data-img-del="${im.id}" title="Delete" ${p.images.length <= 1 ? "disabled" : ""}>✕</button></figcaption></figure>`).join("")}</div>
+        <form data-upload="${p.id}" class="row" style="margin-top:8px"><input type="file" name="photos" accept="image/jpeg,image/png,image/webp" multiple required><button class="btn sm line" type="submit">Upload photos</button></form>
+      </div>
+    </div>`).join("");
+  // review photos
+  $("#photosList").innerHTML = data.reviewPhotos.length ? data.reviewPhotos.map((ph) => `<figure><img src="${esc(ph.url)}" alt="Review photo"><figcaption><b>${esc(ph.productName)}</b> · ${"★".repeat(ph.rating)}<br><span class="pill ${ph.status === "approved" ? "active" : ""}">${esc(ph.status)}</span> <button class="btn sm danger" data-photo-del="${ph.id}" style="float:right">Delete</button></figcaption></figure>`).join("") : `<p class="sub">No review photos yet.</p>`;
+  // points & alerts
+  const pt = data.points, r = pt.rules;
+  $("#pointStats").innerHTML = `<div><b>${pt.issued}</b>points issued</div><div><b>${pt.used}</b>points used / removed</div><div><b>${pt.outstanding}</b>outstanding (≈ ${inr(pt.outstanding * r.pointValuePaise)})</div>`;
+  $("#pointRules").innerHTML = `Customers earn <b>${r.pointsPer100Rupees}</b> point per ₹100 spent (after discounts) when an order is <b>delivered</b>, for orders placed from ${esc(r.pointsFrom)}. Each point is worth <b>${inr(r.pointValuePaise)}</b> and can pay for up to <b>${r.maxRedeemPercent}%</b> of an order, from <b>${r.minRedeemPoints}</b> points. Cancelled or returned orders give used points back and remove earned ones. Gift wrap costs <b>${inr(r.giftWrapPaise)}</b>. Change these in <code>.env</code> (POINTS_PER_100_RUPEES, POINT_VALUE_PAISE, POINTS_MAX_REDEEM_PERCENT, POINTS_MIN_REDEEM, POINTS_FROM, GIFT_WRAP_FEE_PAISE).`;
+  $("#alertsList").innerHTML = data.alerts.length ? `<table><tr><th>Product</th><th>Alert</th><th>Waiting</th></tr>${data.alerts.map((a) => `<tr><td>${esc(a.name)}</td><td>${a.kind === "back_in_stock" ? "Back in stock" : "Price drop"}</td><td>${a.waiting}</td></tr>`).join("")}</table>` : `<p class="sub">Nobody is waiting for an alert.</p>`;
+}
+
+const localToIso = (v) => v ? new Date(v).toISOString() : undefined;
+$("#dealForm").onsubmit = (e) => { e.preventDefault(); const f = e.target; act(async () => {
+  await api("/deals", { method: "POST", body: { productId: Number(f.productId.value), dealPricePaise: Math.round(Number(f.price.value) * 100), startsAt: localToIso(f.startsAt.value), endsAt: localToIso(f.endsAt.value), title: f.title.value || undefined } });
+  f.reset();
+}, "Deal saved"); };
+$("#comboForm").onsubmit = (e) => { e.preventDefault(); const f = e.target; act(async () => {
+  const type = f.discountType.value, amount = Number(f.discountValue.value);
+  await api("/combos", { method: "POST", body: { title: f.title.value, minQuantity: Number(f.minQuantity.value), scentFamily: f.scentFamily.value || null, discountType: type, discountValue: type === "fixed" ? Math.round(amount * 100) : amount, stackWithCoupons: f.stackWithCoupons.checked, endsAt: localToIso(f.endsAt.value) } });
+  f.reset();
+}, "Combo created"); };
+$("#adjustForm").onsubmit = (e) => { e.preventDefault(); const f = e.target; act(async () => {
+  const r = await api("/points/adjust", { method: "POST", body: { email: f.email.value, points: Number(f.points.value), note: f.note.value } });
+  toast(`Done — new balance ${r.balance} points`); f.reset();
+}); };
+
+document.addEventListener("click", (e) => {
+  const t = e.target;
+  const cd = t.closest("[data-cancel-deal]"); if (cd && confirmInline(cd)) return act(() => api(`/deals/${cd.dataset.cancelDeal}`, { method: "DELETE" }), "Deal ended — price restored");
+  const tc = t.closest("[data-toggle-combo]"); if (tc) return act(() => api(`/combos/${tc.dataset.toggleCombo}`, { method: "PATCH", body: { active: tc.dataset.on !== "true" } }), "Combo updated");
+  const sc = t.closest("[data-save-coupon]"); if (sc) { const row = sc.closest("tr"); return act(() => api(`/coupons/${sc.dataset.saveCoupon}`, { method: "PATCH", body: { showInStore: $("[data-show]", row).checked, description: $("[data-desc]", row).value } }), "Coupon updated"); }
+  const di = t.closest("[data-img-del]"); if (di && confirmInline(di)) return act(() => api(`/images/${di.dataset.imgDel}`, { method: "DELETE" }), "Photo removed");
+  const il = t.closest("[data-img-left]"); if (il) {
+    const prod = data.products.find((p) => String(p.id) === il.dataset.pid), k = Number(il.dataset.order);
+    const a = prod.images[k], b = prod.images[k - 1];
+    return act(async () => { await api(`/images/${a.id}`, { method: "PATCH", body: { displayOrder: k - 1 } }); await api(`/images/${b.id}`, { method: "PATCH", body: { displayOrder: k } });
+      for (const [i, im] of prod.images.entries()) if (i !== k && i !== k - 1 && im.order !== i) await api(`/images/${im.id}`, { method: "PATCH", body: { displayOrder: i } }); }, "Order updated");
+  }
+  const dp = t.closest("[data-photo-del]"); if (dp && confirmInline(dp)) return act(() => api(`/review-photos/${dp.dataset.photoDel}`, { method: "DELETE" }), "Photo deleted");
+});
+/* two-step confirm without browser dialogs: first click arms the button */
+function confirmInline(btn) {
+  if (btn.dataset.armed) return true;
+  const old = btn.textContent; btn.dataset.armed = "1"; btn.textContent = "Sure?";
+  setTimeout(() => { delete btn.dataset.armed; btn.textContent = old; }, 3000);
+  return false;
+}
+document.addEventListener("submit", (e) => {
+  const g = e.target.closest("[data-group-form]");
+  if (g) { e.preventDefault(); return act(() => api(`/products/${g.dataset.groupForm}`, { method: "PATCH", body: { variantGroup: g.g.value.trim() || null } }), "Size group saved"); }
+  const u = e.target.closest("[data-upload]");
+  if (u) { e.preventDefault(); const fd = new FormData(); [...u.photos.files].forEach((f) => fd.append("photos", f)); return act(() => api(`/products/${u.dataset.upload}/images`, { method: "POST", form: fd }), "Photos uploaded"); }
+});
+load();
+})();
+</script>
+</body>
+</html>
