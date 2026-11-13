@@ -29,7 +29,7 @@ spec:
         - name: ghcr-pull
       containers:
         - name: postgres
-          image: ghcr.io/babu120987/buva-shop-db:latest
+          image: ghcr.io/babu120987/buva12-11-2026-db:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 5432

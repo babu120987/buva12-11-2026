@@ -4,11 +4,11 @@ Images are built by GitHub Actions (`.github/workflows/build-images.yml`) on eve
 
 | Image | Contents |
 |---|---|
-| `ghcr.io/babu120987/buva-shop-web` | Nginx + storefront, `/admin`, invoice pages |
-| `ghcr.io/babu120987/buva-shop-api` | BUVA Node API |
-| `ghcr.io/babu120987/buva-shop-db`  | Postgres 16 + DR backup + migrations — **contains customer data, keep private** |
+| `ghcr.io/babu120987/buva12-11-2026-web` | Nginx + storefront, `/admin`, invoice pages |
+| `ghcr.io/babu120987/buva12-11-2026-api` | BUVA Node API |
+| `ghcr.io/babu120987/buva12-11-2026-db`  | Postgres 16 + DR backup + migrations — **contains customer data, keep private** |
 
-If your repo is not named `babu120987/buva-shop`, change the three `image:` lines in
+If your repo is not named `babu120987/buva12-11-2026`, change the three `image:` lines in
 `db.yaml`, `api.yaml` and `web.yaml` to `ghcr.io/<owner>/<repo>-db|api|web`.
 
 ## 1. One-time setup on the cluster

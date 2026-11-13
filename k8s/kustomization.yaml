@@ -11,5 +11,5 @@ resources:
   - ingress.yaml
 # Pin a specific build instead of :latest, e.g.:
 # images:
-#   - name: ghcr.io/babu120987/buva-shop-api
+#   - name: ghcr.io/babu120987/buva12-11-2026-api
 #     newTag: sha-1a2b3c4
