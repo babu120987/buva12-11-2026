@@ -3,7 +3,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
-COPY server.js invoices.js order-emails.js commerce.js ./
+COPY server.js invoices.js order-emails.js commerce.js knowledge.js knowledge-drafts.js ./
 COPY migrations ./migrations
 # admin-uploaded product images are written to /app/uploads (mounted as a volume)
 RUN mkdir -p /app/uploads && chown -R node:node /app/uploads

@@ -17,6 +17,7 @@ import {
 } from "./invoices.js";
 import { orderConfirmationEmail, paymentConfirmationEmail } from "./order-emails.js";
 import { initCommerce } from "./commerce.js";
+import { initKnowledge } from "./knowledge.js";
 const googleClientId = process.env.GOOGLE_CLIENT_ID || "";
 const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET || "";
 const googleCallbackUrl = process.env.GOOGLE_CALLBACK_URL || "";
@@ -1356,9 +1357,18 @@ app.post("/api/assistant", asyncRoute(async (request, response) => {
       source: "assistant"
     });
   }
+  // Shop questions (delivery, returns, payment, points, care, contact...) are answered from the
+  // documents staff keep in Admin -> Assistant knowledge, with Gemini writing the reply.
+  const visitor = (request.get("x-forwarded-for") || "").split(",")[0].trim() || request.ip || "?";
+  const commerceQuestion = /\b(product|fragrance|perfume|scent|note|price|cost|stock|available|buy|gift|set|discovery|recommend|suggest|jasmine|vetiver|oud|rose|mist|floral|fresh|woody|rupee|ingredient|certification)s?\b|₹/i.test(question);
+  const policyQuestion = /\b(deliver\w*|ship\w*|courier|track\w*|dispatch\w*|return\w*|refund\w*|exchange\w*|replace\w*|cancel\w*|cod|cash|pay\w*|upi|cards?|razorpay|emi|invoices?|gst|bill\w*|points?|rewards?|loyalty|coupons?|offers?|discount\w*|combo\w*|wrap\w*|contact\w*|e-?mail|phone|call|whatsapp|hours|timings?|open|visit|address|located|location|consult\w*|wholesale|stockists?|corporate|wedding|bulk|apply|applying|wear\w*|last\w*|longevity|skin|allerg\w*|store|storing|storage|original|authentic|genuine|polic\w*|account|password|login|sign\w*|orders?|wishlist|alerts?|notify|reviews?|about)\b/i.test(question);
+  // without Gemini, a question that is also about products goes to the live catalogue first
+  if (policyQuestion && (knowledge.config.aiConfigured || !commerceQuestion)) {
+    const known = await knowledge.answer(question, { visitor }).catch((error) => { console.warn("Knowledge answer failed", error.message); return null; });
+    if (known?.answer) return response.json({ answer: known.answer, products: known.products, source: known.source });
+  }
   // Price, stock, notes and gift answers must use current catalogue rows, not
   // the separately indexed RAG documents, which can lag behind inventory edits.
-  const commerceQuestion = /\b(product|fragrance|perfume|scent|note|price|cost|stock|available|buy|gift|set|discovery|recommend|suggest|jasmine|vetiver|oud|rose|mist|floral|fresh|woody|rupee|ingredient|certification)s?\b|₹/i.test(question);
   if (commerceQuestion) {
     const result = await pool.query(`${productSelect}
       WHERE p.active=TRUE AND c.active=TRUE ORDER BY p.featured DESC, p.name LIMIT 100`);
@@ -1379,6 +1389,10 @@ app.post("/api/assistant", asyncRoute(async (request, response) => {
       return { product, score: terms.reduce((score, term) => score + (name.includes(term) ? 3 : 0) + (details.includes(term) ? 1 : 0), 0) };
     }).sort((a, b) => b.score - a.score);
     const matches = terms.length ? scored.filter((entry) => entry.score > 0).slice(0, 3).map((entry) => entry.product) : products.slice(0, 3);
+    if (!matches.length && policyQuestion) {
+      const known = await knowledge.answer(question, { visitor }).catch(() => null);
+      if (known?.answer) return response.json({ answer: known.answer, products: known.products, source: known.source });
+    }
     if (/\b(how many|count)\b/.test(normalizedQuestion) && !terms.length) {
       return response.json({ answer: `The current BUVA catalogue has ${products.length} matching products.`, products: [], source: "catalogue" });
     }
@@ -1402,6 +1416,10 @@ app.post("/api/assistant", asyncRoute(async (request, response) => {
     } catch (error) {
       console.warn("RAG assistant unavailable; using catalogue recommendations", error.message);
     }
+  }
+  if (!policyQuestion) {
+    const known = await knowledge.answer(question, { visitor }).catch(() => null);
+    if (known?.answer) return response.json({ answer: known.answer, products: known.products, source: known.source });
   }
   const terms = question.toLowerCase().split(/[^a-z0-9]+/).filter((term) => term.length > 2).slice(0, 8);
   if (terms.length === 0) {
@@ -2901,6 +2919,8 @@ const commerce = initCommerce({
   app, pool, ApiError, asyncRoute, requireAdmin, getCustomerSession, getCart, sendEmail,
   productSelect, uploadsDir, withTransaction, siteUrl: process.env.PUBLIC_SITE_URL || "https://buva.shop"
 });
+
+const knowledge = initKnowledge({ app, pool, ApiError, asyncRoute, requireAdmin, productSelect });
 
 app.use((error, _request, response, _next) => {
   if (error instanceof ApiError) {

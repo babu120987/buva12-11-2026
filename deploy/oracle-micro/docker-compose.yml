@@ -1,0 +1,72 @@
+# BUVA on the Oracle free micro VM (1 GB RAM). Pulls ready-made images; nothing is built here.
+# Nginx Proxy Manager reaches the shop as  buva-web : 80  on the shared "buva-proxy" network.
+name: buva
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "5m", max-file: "2" }   # keep logs from filling the disk
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: buva-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: buva
+      POSTGRES_DB: buva
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+    # small-memory settings
+    command: >
+      postgres -c shared_buffers=48MB -c effective_cache_size=192MB -c work_mem=2MB
+      -c maintenance_work_mem=32MB -c max_connections=30 -c wal_buffers=1MB
+      -c max_wal_size=256MB -c min_wal_size=64MB
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U buva -d buva"]
+      interval: 10s
+      timeout: 3s
+      retries: 30
+    mem_limit: 200m
+    logging: *logging
+    networks: [backend]
+
+  api:
+    image: ghcr.io/babu120987/buva12-11-2026-api:${BUVA_TAG:-latest}
+    container_name: buva-api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: 9000
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: buva
+      DB_USER: buva
+      NODE_OPTIONS: --max-old-space-size=160
+    volumes:
+      - uploads:/app/uploads
+    depends_on:
+      db: { condition: service_healthy }
+    mem_limit: 256m
+    logging: *logging
+    networks: [backend, frontend]
+
+  web:
+    image: ghcr.io/babu120987/buva12-11-2026-web:${BUVA_TAG:-latest}
+    container_name: buva-web
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9091:80"     # for testing on the VM only; the internet comes in through NPM
+    depends_on: [api]
+    mem_limit: 48m
+    logging: *logging
+    networks: [frontend, proxy]
+
+networks:
+  frontend: {}
+  backend: {}
+  proxy: { external: true, name: buva-proxy }
+
+volumes:
+  db: { name: buva_db }
+  uploads: { name: buva_uploads }

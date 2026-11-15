@@ -57,6 +57,13 @@ docker compose exec -T db psql -U buva -d buva < backend/migrations/008_commerce
 docker compose up -d --build
 ```
 
+## BUVA Assistant knowledge (added 15 Nov 2026)
+
+- **Admin → Assistant knowledge** (`/admin/knowledge.html`): add, edit, switch off or delete the shop documents the assistant answers from (delivery, returns, payments, points, invoices, care, contact). Drop in `.txt`/`.md` files, or paste text from Word/PDF. "Try a question" shows exactly what shoppers will get.
+- Ten drafts are added on the first start, marked **Needs your check**. They're written only from the shop's own settings and website text.
+- With `GEMINI_API_KEY` set, Gemini writes short answers (in the shopper's language) from those documents plus the live catalogue. Without it, or if Gemini fails, the best-matching paragraph is shown. Product prices, notes and stock always come from the live catalogue.
+- Documents live in the `knowledge_documents` table, so the nightly database backup includes them. AI answers are limited to 12 a minute per visitor and 300 an hour in total.
+
 ## Kubernetes
 
 See **[k8s/README.md](k8s/README.md)** — GitHub Actions builds private images to GHCR on every

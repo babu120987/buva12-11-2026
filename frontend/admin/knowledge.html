@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex,nofollow">
+<title>BUVA Admin — Assistant knowledge</title>
+<link rel="icon" href="/favicon.ico">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#1c1418;--plum:#3a1f2b;--wine:#5b2a3a;--gold:#b98a4a;--cream:#f7f1ea;--paper:#fbf8f4;--line:#e6dccf;--muted:#7b6d68;--ok:#2f6b4a;--err:#b33a3a}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Manrope,system-ui,sans-serif;background:var(--paper);color:var(--ink);font-size:14px;line-height:1.5}
+button,input,select,textarea{font:inherit}
+button{cursor:pointer}
+header{background:var(--plum);color:var(--cream);padding:14px 28px;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+header b{font-family:'Cormorant Garamond',serif;font-size:26px;letter-spacing:.25em}
+header a{color:var(--cream);font-size:13px}
+nav{display:flex;gap:4px;flex-wrap:wrap;padding:10px 28px;border-bottom:1px solid var(--line);background:#fff;position:sticky;top:0;z-index:5}
+nav button{background:none;border:none;padding:8px 14px;border-radius:20px;font-weight:600;color:var(--muted)}
+nav button.on{background:var(--cream);color:var(--plum)}
+main{max-width:1180px;margin:0 auto;padding:26px 28px 60px}
+h1{font-family:'Cormorant Garamond',serif;font-weight:500;font-size:34px;margin-bottom:4px}
+.lead{color:var(--muted);margin-bottom:20px;max-width:760px}
+.card{background:#fff;border:1px solid var(--line);border-radius:6px;padding:18px;margin-bottom:16px}
+.card h3{font-size:13px;letter-spacing:.12em;text-transform:uppercase;margin-bottom:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;align-items:end}
+label{display:block;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+label input,label select,label textarea{display:block;width:100%;margin-top:4px;padding:9px 10px;border:1px solid var(--line);border-radius:4px;background:#fff;color:var(--ink);text-transform:none;letter-spacing:0;font-weight:400;font-size:14px}
+label.inline{display:flex;gap:8px;align-items:center;text-transform:none;letter-spacing:0;font-size:14px;color:var(--ink);font-weight:500}
+label.inline input{width:auto;margin:0}
+.btn{background:var(--plum);color:#fff;border:none;border-radius:4px;padding:10px 16px;font-weight:600}
+.btn:hover{background:var(--wine)}
+.btn.line{background:#fff;color:var(--plum);border:1px solid var(--plum)}
+.btn.sm{padding:6px 11px;font-size:12px}
+.btn.danger{background:#fff;color:var(--err);border:1px solid var(--err)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 9px;border-radius:20px;background:var(--cream);color:var(--plum);text-transform:capitalize}
+.pill.active{background:#e3f0e8;color:var(--ok)}
+.pill.ended,.pill.cancelled{background:#eee;color:#777}
+.imgs{display:flex;gap:8px;flex-wrap:wrap}
+.imgs figure{position:relative;width:86px}
+.imgs img{width:86px;height:104px;object-fit:cover;border-radius:4px;border:1px solid var(--line);background:#222}
+.imgs figcaption{display:flex;gap:4px;margin-top:4px}
+.imgs figcaption button{flex:1;font-size:11px;padding:3px 0;border:1px solid var(--line);background:#fff;border-radius:3px}
+.prod{display:grid;grid-template-columns:220px 1fr;gap:18px;padding:16px 0;border-bottom:1px solid var(--line)}
+.prod:last-child{border-bottom:none}
+.prod h4{font-size:16px}
+.sub{color:var(--muted);font-size:12px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:11px 20px;border-radius:30px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:9}
+.toast.show{opacity:1}
+.toast.err{background:var(--err)}
+.login{max-width:420px;margin:80px auto;background:#fff;border:1px solid var(--line);border-radius:6px;padding:30px}
+.stats{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.stats div{background:#fff;border:1px solid var(--line);border-radius:6px;padding:14px 18px;min-width:160px}
+.stats b{display:block;font-size:24px;font-family:'Cormorant Garamond',serif}
+.photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}
+.photos figure{background:#fff;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.photos img{width:100%;height:140px;object-fit:cover;display:block}
+.photos figcaption{padding:8px;font-size:12px}
+[hidden]{display:none!important}
+@media(max-width:700px){.prod{grid-template-columns:1fr}main{padding:20px 16px}}
+.pill.off{background:#eee;color:#777}
+.pill.check{background:#fbefd9;color:#8a5a12}
+.doc{border-bottom:1px solid var(--line);padding:14px 0}
+.doc:last-child{border-bottom:none}
+.doc h4{font-size:15px;margin-bottom:2px}
+.doc .row{justify-content:space-between}
+.doc textarea,.addform textarea{width:100%;min-height:260px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;line-height:1.55}
+.status{padding:12px 16px;border-radius:6px;margin-bottom:16px;border:1px solid var(--line);background:#fff}
+.status.ok{border-color:#b9d9c5;background:#f1f8f3}
+.status.warn{border-color:#ecd3a5;background:#fdf7ec}
+.answer{white-space:pre-wrap;background:var(--cream);border-radius:6px;padding:12px 14px;margin-top:12px}
+.drop{border:1px dashed var(--gold);border-radius:6px;padding:14px;text-align:center;color:var(--muted);margin-bottom:12px}
+.drop.over{background:var(--cream)}
+</style>
+</head>
+<body>
+<header><b>BUVA</b><span>Assistant knowledge</span><a href="/admin/">← Back to main admin</a></header>
+
+<div class="login" id="login" hidden>
+  <h1>Admin access</h1>
+  <p class="lead">Enter the access key (ADMIN_API_KEY).</p>
+  <form id="loginForm"><label>Access key<input type="password" id="keyIn" autocomplete="current-password" required></label><br><button class="btn" type="submit">Open</button> <span class="sub" id="loginErr" style="color:var(--err)"></span></form>
+</div>
+
+<div id="app" hidden>
+<main>
+  <h1>Assistant knowledge</h1>
+  <p class="lead">The BUVA Assistant answers shoppers' questions about delivery, returns, payment, points, care and contact from these documents. Product prices, notes and stock always come from the live catalogue. Write plainly, one topic per document; a line starting with <b>##</b> starts a new section.</p>
+  <div class="status" id="aiStatus"></div>
+
+  <div class="card"><h3>Try a question</h3>
+    <form id="testForm" class="row"><input id="testQ" style="flex:1;min-width:240px;padding:9px 10px;border:1px solid var(--line);border-radius:4px" maxlength="500" placeholder="e.g. Do you deliver to Bengaluru? How do I return an order?" required><button class="btn" type="submit">Ask</button></form>
+    <div id="testOut"></div>
+  </div>
+
+  <div class="card addform"><h3>Add a document</h3>
+    <div class="drop" id="drop">Drop .txt or .md files here, or <label style="display:inline;color:var(--plum);text-transform:none;letter-spacing:0;font-size:14px;cursor:pointer;text-decoration:underline">choose files<input type="file" id="fileIn" accept=".txt,.md,.markdown,text/plain,text/markdown" multiple hidden></label>. Each file becomes one document. For a Word or PDF file, open it, copy the text and paste it below.</div>
+    <form id="addForm">
+      <label>Title<input name="title" maxlength="120" required placeholder="e.g. Delivery to other countries"></label><br>
+      <label>Text<textarea name="body" required placeholder="## Section heading&#10;Write the facts shoppers need, in full sentences."></textarea></label><br>
+      <button class="btn" type="submit">Save document</button>
+    </form>
+  </div>
+
+  <div class="card"><h3>Documents</h3><div id="docs"></div></div>
+</main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+"use strict";
+const KEY = "buvaAdminKey";
+let key = ""; try { key = sessionStorage.getItem(KEY) || ""; } catch {}
+let data = null; const open = new Set();
+const $ = (s, el = document) => el.querySelector(s), $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const when = (v) => v ? new Date(v).toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
+let tt; const toast = (m, err) => { const t = $("#toast"); t.textContent = m; t.className = "toast show" + (err ? " err" : ""); clearTimeout(tt); tt = setTimeout(() => t.className = "toast", 3000); };
+
+async function api(path, { method = "GET", body } = {}) {
+  const headers = { "X-Admin-Key": key };
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  const res = await fetch("/api/admin/knowledge" + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  const d = res.status === 204 ? {} : await res.json().catch(() => ({}));
+  if (res.status === 401) { showLogin("That key isn't valid."); throw new Error("Unauthorized"); }
+  if (!res.ok) throw new Error(d.error || `Request failed (${res.status})`);
+  return d;
+}
+const act = async (fn, ok) => { try { await fn(); if (ok) toast(ok); await load(); } catch (e) { if (e.message !== "Unauthorized") toast(e.message, true); } };
+
+function showLogin(msg = "") { $("#app").hidden = true; $("#login").hidden = false; $("#loginErr").textContent = msg; try { sessionStorage.removeItem(KEY); } catch {} key = ""; }
+$("#loginForm").onsubmit = async (e) => { e.preventDefault(); key = $("#keyIn").value.trim(); try { sessionStorage.setItem(KEY, key); } catch {} await load(); };
+
+async function load() {
+  if (!key) return showLogin();
+  try { data = await api(""); } catch (e) { if (e.message !== "Unauthorized") toast(e.message, true); return; }
+  $("#login").hidden = true; $("#app").hidden = false;
+  render();
+}
+
+function render() {
+  const ai = data.ai;
+  const toCheck = data.documents.filter((d) => !d.reviewed).length;
+  $("#aiStatus").className = "status " + (ai.configured ? "ok" : "warn");
+  $("#aiStatus").innerHTML = (ai.configured
+    ? `<b>AI answers are on</b> (Gemini, model <code>${esc(ai.model)}</code>). Replies are written from these documents and the live catalogue.`
+    : `<b>AI answers are off.</b> The assistant shows the best-matching paragraph instead. To turn AI on, add <code>GEMINI_API_KEY</code> to the server's .env file and restart the API.`)
+    + (toCheck ? `<br><span class="pill check">${toCheck} to check</span> These drafts were written from the shop's settings and website. Read each one, correct anything that's wrong, and press <b>Save</b> (or <b>Mark as checked</b>).` : "");
+  const docs = data.documents;
+  $("#docs").innerHTML = docs.length ? docs.map((d) => `
+    <div class="doc" data-id="${d.id}">
+      <div class="row">
+        <div><h4>${esc(d.title)}</h4>
+          <span class="pill ${d.active ? "active" : "off"}">${d.active ? "Live" : "Off"}</span>
+          ${d.reviewed ? "" : '<span class="pill check">Needs your check</span>'}
+          <span class="sub">${d.body.length.toLocaleString("en-IN")} characters · updated ${when(d.updatedAt)}</span></div>
+        <div class="row">
+          <button class="btn sm line" data-act="toggle-open">${open.has(d.id) ? "Close" : "Read &amp; edit"}</button>
+          ${d.reviewed ? "" : '<button class="btn sm line" data-act="checked">Mark as checked</button>'}
+          <button class="btn sm line" data-act="active">${d.active ? "Switch off" : "Switch on"}</button>
+          <button class="btn sm danger" data-act="delete">Delete</button>
+        </div>
+      </div>
+      ${open.has(d.id) ? `<form class="edit" style="margin-top:12px">
+        <label>Title<input name="title" maxlength="120" value="${esc(d.title)}" required></label><br>
+        <label>Text<textarea name="body" required>${esc(d.body)}</textarea></label><br>
+        <button class="btn" type="submit">Save</button> <span class="sub">Saving also marks it as checked.</span>
+      </form>` : ""}
+    </div>`).join("") : '<p class="sub">No documents yet. Add one above.</p>';
+}
+
+$("#docs").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-act]"); if (!b) return;
+  const id = Number(b.closest("[data-id]").dataset.id), doc = data.documents.find((d) => d.id === id);
+  if (b.dataset.act === "toggle-open") { open.has(id) ? open.delete(id) : open.add(id); render(); }
+  if (b.dataset.act === "checked") act(() => api(`/${id}`, { method: "PATCH", body: { reviewed: true } }), "Marked as checked");
+  if (b.dataset.act === "active") act(() => api(`/${id}`, { method: "PATCH", body: { active: !doc.active } }), doc.active ? "Switched off — the assistant won't use it" : "Switched on");
+  if (b.dataset.act === "delete" && confirm(`Delete "${doc.title}"? This can't be undone.`)) act(() => api(`/${id}`, { method: "DELETE" }), "Deleted");
+});
+$("#docs").addEventListener("submit", (e) => {
+  e.preventDefault(); const f = e.target, id = Number(f.closest("[data-id]").dataset.id);
+  act(async () => { await api(`/${id}`, { method: "PATCH", body: { title: f.title.value, body: f.body.value } }); open.delete(id); }, "Saved");
+});
+
+$("#addForm").onsubmit = (e) => {
+  e.preventDefault(); const f = e.target;
+  act(async () => { await api("", { method: "POST", body: { title: f.title.value, body: f.body.value } }); f.reset(); }, "Document added");
+};
+
+async function addFiles(files) {
+  let added = 0;
+  for (const file of files) {
+    if (!/\.(txt|md|markdown)$/i.test(file.name)) { toast(`${file.name}: only .txt or .md files — paste Word or PDF text instead`, true); continue; }
+    if (file.size > 400000) { toast(`${file.name} is too large — split it into smaller files`, true); continue; }
+    const text = await file.text();
+    const title = file.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim().slice(0, 120) || "Document";
+    try { await api("", { method: "POST", body: { title, body: text } }); added += 1; } catch (e) { if (e.message !== "Unauthorized") toast(`${file.name}: ${e.message}`, true); }
+  }
+  if (added) { toast(`${added} document${added > 1 ? "s" : ""} added`); await load(); }
+}
+$("#fileIn").onchange = (e) => { addFiles([...e.target.files]); e.target.value = ""; };
+const drop = $("#drop");
+drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); addFiles([...e.dataTransfer.files]); });
+
+$("#testForm").onsubmit = async (e) => {
+  e.preventDefault(); const q = $("#testQ").value.trim(); if (q.length < 2) return;
+  $("#testOut").innerHTML = '<p class="sub" style="margin-top:10px">Thinking…</p>';
+  try {
+    const r = await api("/test", { method: "POST", body: { question: q } });
+    const how = { "knowledge-ai": "Written by Gemini from your documents", knowledge: "Best-matching paragraph (AI off or unavailable)", none: "No document covers this" }[r.source] || r.source;
+    $("#testOut").innerHTML = `<div class="answer">${r.answer ? esc(r.answer) : "The documents don't answer this. On the shop, the assistant will fall back to the product catalogue."}</div>
+      <p class="sub" style="margin-top:6px">${esc(how)}${r.used?.length ? " · matched: " + r.used.map(esc).join(", ") : ""}${r.error ? ` · <span style="color:var(--err)">AI error: ${esc(r.error)}</span>` : ""}</p>`;
+  } catch (e2) { if (e2.message !== "Unauthorized") $("#testOut").innerHTML = `<p class="sub" style="color:var(--err);margin-top:10px">${esc(e2.message)}</p>`; }
+};
+
+load();
+})();
+</script>
+</body>
+</html>
