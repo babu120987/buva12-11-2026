@@ -1374,7 +1374,18 @@ app.post("/api/assistant", asyncRoute(async (request, response) => {
       WHERE p.active=TRUE AND c.active=TRUE ORDER BY p.featured DESC, p.name LIMIT 100`);
     const words = normalizedQuestion.match(/[a-z]{3,}/g) || [];
     const ignored = new Set(["what", "which", "where", "when", "does", "with", "have", "the", "and", "for", "buva", "fragrance", "fragrances", "perfume", "perfumes", "scent", "notes", "note", "price", "cost", "much", "tell", "about", "recommend", "recommendations", "suggest", "suggestions", "best", "gift", "gifts", "idea", "ideas", "products", "product", "options", "available", "stock", "please", "show", "under", "below", "less", "than", "all", "list", "count", "many", "how", "rupees", "rupee", "ingredient", "ingredients", "certification", "certifications", "looking", "want", "need", "choose", "someone", "something", "you", "can"]);
-    const terms = words.filter((word) => !ignored.has(word));
+    for (const w of ["kind", "kinds", "type", "types", "range", "collection", "collections", "got", "sell", "offer", "any", "some", "types", "variety", "varieties", "category", "categories", "family", "families", "option"]) ignored.add(w);
+    const nearWord = (a, b) => {           // small typo check: at most 2 letters different
+      if (Math.abs(a.length - b.length) > 2) return false;
+      const row = Array.from({ length: b.length + 1 }, (_, i) => i);
+      for (let i = 1; i <= a.length; i += 1) {
+        let prev = row[0]; row[0] = i;
+        for (let j = 1; j <= b.length; j += 1) { const t = row[j]; row[j] = Math.min(row[j] + 1, row[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = t; }
+      }
+      return row[b.length] <= 2;
+    };
+    const generic = ["fragrance", "fragrances", "perfume", "perfumes", "available", "products", "recommend", "suggest"];
+    const terms = words.filter((word) => !ignored.has(word) && !(word.length >= 6 && generic.some((g) => nearWord(word, g))));
     let products = result.rows;
     if (/\b(gifts?|sets?|discovery)\b/.test(normalizedQuestion)) products = products.filter((product) => product.scentFamily === "sets");
     const budgetMatch = /(?:under|below|less than)\s*₹?\s*([\d,]+)/.exec(normalizedQuestion);
@@ -1389,9 +1400,19 @@ app.post("/api/assistant", asyncRoute(async (request, response) => {
       return { product, score: terms.reduce((score, term) => score + (name.includes(term) ? 3 : 0) + (details.includes(term) ? 1 : 0), 0) };
     }).sort((a, b) => b.score - a.score);
     const matches = terms.length ? scored.filter((entry) => entry.score > 0).slice(0, 3).map((entry) => entry.product) : products.slice(0, 3);
-    if (!matches.length && policyQuestion) {
-      const known = await knowledge.answer(question, { visitor }).catch(() => null);
+    if (!matches.length) {
+      // with Gemini: let it answer from the documents + catalogue; without: only for shop questions
+      const known = knowledge.config.aiConfigured || policyQuestion
+        ? await knowledge.answer(question, { visitor, force: knowledge.config.aiConfigured }).catch(() => null) : null;
       if (known?.answer) return response.json({ answer: known.answer, products: known.products, source: known.source });
+      const families = [...new Set(products.map((product) => product.scentFamily))];
+      if (products.length && families.length) {
+        const picks = products.slice(0, 3);
+        return response.json({
+          answer: `I couldn't find an exact match for that. BUVA has ${products.length} fragrance${products.length === 1 ? "" : "s"} in the ${families.join(", ").replace(/, ([^,]*)$/, " and $1")} ${families.length === 1 ? "family" : "families"}. A few to start with: ${picks.map((p) => `${p.name} (${formatAssistantPrice(p.pricePaise)})`).join(", ")}. Tell me a note you like, such as jasmine, vetiver or oud, or a budget.`,
+          products: picks, source: "catalogue"
+        });
+      }
     }
     if (/\b(how many|count)\b/.test(normalizedQuestion) && !terms.length) {
       return response.json({ answer: `The current BUVA catalogue has ${products.length} matching products.`, products: [], source: "catalogue" });

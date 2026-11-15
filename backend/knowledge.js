@@ -154,7 +154,7 @@ export const initKnowledge = ({ app, pool, ApiError, asyncRoute, requireAdmin, p
     WHERE p.active=TRUE AND c.active=TRUE ORDER BY p.featured DESC, p.name LIMIT 60`)).rows;
 
   // Returns { answer, products, source, used, error } or null when the documents don't cover it.
-  const answer = async (question, { visitor = "?", debug = false } = {}) => {
+  const answer = async (question, { visitor = "?", debug = false, force = false } = {}) => {
     const idx = await getIndex();
     if (!idx.chunks.length) return null;
     const hits = search(idx, question, 6);
@@ -165,7 +165,7 @@ export const initKnowledge = ({ app, pool, ApiError, asyncRoute, requireAdmin, p
 
     // Tamil, Hindi and other Indian-script questions can't be keyword-matched, so Gemini gets them too
     const indicScript = /[\u0900-\u0DFF]/.test(question);
-    if (geminiKey && (top > 0 || debug || indicScript) && allowAi(visitor)) {
+    if (geminiKey && (top > 0 || debug || force || indicScript) && allowAi(visitor)) {
       // small knowledge bases go to Gemini whole; larger ones as the best-matching paragraphs
       const context = totalChars <= 24_000
         ? idx.docs.map((d) => `### ${d.title}\n${d.body}`).join("\n\n")
